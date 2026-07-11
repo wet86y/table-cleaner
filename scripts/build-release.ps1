@@ -15,6 +15,8 @@ dotnet publish -c Release -r win-x64 `
     --self-contained true `
     -p:PublishSingleFile=true `
     -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:DebugSymbols=false `
+    -p:DebugType=None `
     -o $ArtifactsDir `
     --nologo
 if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
