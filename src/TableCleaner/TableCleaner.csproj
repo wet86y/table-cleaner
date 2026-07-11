@@ -24,10 +24,9 @@
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 
-  <!-- Copy config/exports/samples to output -->
+  <!-- Copy config/exports to output -->
   <ItemGroup>
     <None Update="config\**" CopyToOutputDirectory="PreserveNewest" />
     <None Update="exports\**" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="samples\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
