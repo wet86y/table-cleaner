@@ -1,0 +1,8 @@
+{
+  "applicationId": "table-cleaner",
+  "publishedExeName": "\u8868\u683c\u5de5\u5177.exe",
+  "projectFile": "src/TableCleaner/TableCleaner.csproj",
+  "artifactsDirectory": "artifacts/\u8868\u683c\u5de5\u5177-win-x64",
+  "runtimeIdentifier": "win-x64",
+  "enableSingleFileCompression": true
+}

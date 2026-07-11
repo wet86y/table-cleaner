@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>表格工具</AssemblyName>
+    <RootNamespace>TableCleaner</RootNamespace>
+    <Product>表格工具</Product>
+    <Description>Windows 桌面小工具，用于对表格数据做快速清洗</Description>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationHighResolutionSupport>true</ApplicationHighResolutionSupport>
+    <ApplicationDefaultFont>Microsoft YaHei, 9pt</ApplicationDefaultFont>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
+    <PackageReference Include="ExcelDataReader" Version="3.7.0" />
+    <PackageReference Include="ExcelDataReader.DataSet" Version="3.7.0" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Copy config/exports/samples to output -->
+  <ItemGroup>
+    <None Update="config\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="exports\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="samples\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
