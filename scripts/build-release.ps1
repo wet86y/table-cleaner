@@ -1,30 +1,11 @@
 $ErrorActionPreference = "Stop"
 
-$Root = Split-Path -Parent $PSScriptRoot
-$ProjectDir = Join-Path $Root "src\TableCleaner"
-$ArtifactsDir = Join-Path $Root "artifacts\表格工具-win-x64"
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$SharedDirectoryName = -join ([char[]](0x5171, 0x4EAB, 0x7A7A, 0x95F4))
+$SharedScript = (Resolve-Path (Join-Path (Join-Path (Split-Path -Parent $ProjectRoot) $SharedDirectoryName) "DesktopUpdateKit\tools\Build-Release.ps1")).Path
+$ConfigPath = Join-Path $ProjectRoot "release.config.json"
 
-Set-Location $ProjectDir
-
-Write-Host "Restoring packages..."
-dotnet restore
-if ($LASTEXITCODE -ne 0) { throw "Restore failed" }
-
-Write-Host "Publishing self-contained release..."
-dotnet publish -c Release -r win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:DebugSymbols=false `
-    -p:DebugType=None `
-    -o $ArtifactsDir `
-    --nologo
-if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
-
-$exe = Join-Path $ArtifactsDir "表格工具.exe"
-if (Test-Path $exe) {
-    $size = (Get-Item $exe).Length / 1MB
-    Write-Host "Done: $exe ({0:F1} MB)" -f $size
-} else {
-    throw "Published exe not found: $exe"
+& $SharedScript -ProjectRoot $ProjectRoot -ConfigPath $ConfigPath
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
 }

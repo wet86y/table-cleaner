@@ -4,7 +4,7 @@
 
 ## 目标
 
-本项目为表格工具（TableCleaner / 表格工具），是一个 Windows 桌面小工具，用于对表格数据做快速清洗。
+本项目为笨蛋表格（TableCleaner / 笨蛋表格），是一个 Windows 桌面小工具，用于对表格数据做快速清洗。
 
 主要入口优先支持从 Excel / WPS / 网页表格复制后通过剪贴板导入，兼顾文件导入（CSV/XLS/XLSX/TXT）。
 
@@ -13,7 +13,7 @@
 - 唯一维护源码：`src/TableCleaner`
 - 调试运行版：`dotnet build .\src\TableCleaner\TableCleaner.csproj -c Release`
 - 打包发布版：`scripts\build-release.ps1`
-- 唯一发布现场：`artifacts\表格工具-win-x64\表格工具.exe`
+- 唯一发布现场：`artifacts\笨蛋表格-win-x64\笨蛋表格.exe`
 - 不维护单独 Debug 版本，不手工编辑 `build/` 或 `artifacts/` 中的编译产物
 
 ## 工作纪律

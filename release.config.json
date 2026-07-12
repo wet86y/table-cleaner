@@ -1,8 +1,41 @@
 {
   "applicationId": "table-cleaner",
-  "publishedExeName": "\u8868\u683c\u5de5\u5177.exe",
+  "repository": "wet86y/table-cleaner",
+  "publishedExeName": "\u7b28\u86cb\u8868\u683c.exe",
+  "releaseAssetName": "table-cleaner.exe",
   "projectFile": "src/TableCleaner/TableCleaner.csproj",
-  "artifactsDirectory": "artifacts/\u8868\u683c\u5de5\u5177-win-x64",
+  "artifactsDirectory": "artifacts/\u7b28\u86cb\u8868\u683c-win-x64",
   "runtimeIdentifier": "win-x64",
-  "enableSingleFileCompression": true
+  "enableSingleFileCompression": true,
+  "about": {
+    "displayName": "\u7b28\u86cb\u8868\u683c",
+    "developer": "wet86y",
+    "historyUrl": "https://github.com/wet86y/table-cleaner"
+  },
+  "downloadNodes": [
+    {
+      "id": "gh-proxy",
+      "template": "https://gh-proxy.com/{url}",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "id": "gh-llkk",
+      "template": "https://gh.llkk.cc/{url}",
+      "priority": 20,
+      "enabled": true
+    },
+    {
+      "id": "ghproxy-net",
+      "template": "https://ghproxy.net/{url}",
+      "priority": 30,
+      "enabled": true
+    },
+    {
+      "id": "github-direct",
+      "template": "{url}",
+      "priority": 1000,
+      "enabled": true
+    }
+  ]
 }

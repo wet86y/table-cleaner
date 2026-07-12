@@ -22,4 +22,7 @@ artifacts/
 *.AssemblyInfo*.cache
 
 # --- Agent scratch ---
+# One-off scripts written by the local agent to verify builds or inspect
+# IL. Safe to delete. If you create new ones during a task, keep them
+# here.
 runtime_files/

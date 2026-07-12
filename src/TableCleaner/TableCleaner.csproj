@@ -5,9 +5,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>表格工具</AssemblyName>
+    <AssemblyName>笨蛋表格</AssemblyName>
     <RootNamespace>TableCleaner</RootNamespace>
-    <Product>表格工具</Product>
+    <Product>笨蛋表格</Product>
     <Description>Windows 桌面小工具，用于对表格数据做快速清洗</Description>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -22,6 +22,14 @@
     <PackageReference Include="ExcelDataReader" Version="3.7.0" />
     <PackageReference Include="ExcelDataReader.DataSet" Version="3.7.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(UpdaterStubPath)"
+                      LogicalName="DesktopUpdateKit.Resources.UpdaterStub.exe"
+                      Condition="'$(UpdaterStubPath)' != '' and Exists('$(UpdaterStubPath)')" />
+    <Compile Include="..\..\..\共享空间\DesktopUpdateKit\src\DesktopUpdateKit\*.cs"
+             Link="Services\DesktopUpdateKit\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Copy config/exports to output -->

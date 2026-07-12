@@ -1,4 +1,4 @@
-# 表格工具
+# 笨蛋表格
 
 Windows 轻量绿色小工具——从剪贴板或文件导入表格数据，快速清洗、去重合并、替换、应用模板。
 
@@ -21,12 +21,12 @@ Windows 轻量绿色小工具——从剪贴板或文件导入表格数据，快
 
 项目只维护 Release 源码路径；调试运行版和打包发布版都从同一套 Release 配置产出。
 
-项目根目录固定为 `D:\项目开发\表格工具`。源码位于 `src\TableCleaner`，脚本位于 `scripts`，构建生成物统一位于 `build`，正式发布包位于 `artifacts`。
+项目根目录固定为 `D:\项目开发\笨蛋表格`。源码位于 `src\TableCleaner`，脚本位于 `scripts`，构建生成物统一位于 `build`，正式发布包位于 `artifacts`。
 
 | 版本 | 命令 | 产物位置 | 用途 |
 |------|------|----------|------|
-| 调试运行版 | `dotnet build .\src\TableCleaner\TableCleaner.csproj -c Release` | `build\bin\Release\表格工具.exe` | 本地测试 |
-| 打包发布版 | `scripts\build-release.ps1` | `artifacts\表格工具-win-x64\表格工具.exe` | 自包含单文件，分发用 |
+| 调试运行版 | `dotnet build .\src\TableCleaner\TableCleaner.csproj -c Release` | `build\bin\Release\笨蛋表格.exe` | 本地测试 |
+| 打包发布版 | `scripts\build-release.ps1` | `artifacts\笨蛋表格-win-x64\笨蛋表格.exe` | 自包含单文件，分发用 |
 
 ## 脚本
 

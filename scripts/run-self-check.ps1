@@ -8,7 +8,7 @@ Write-Host "Building diagnostic configuration..."
 dotnet build $Project -c Release --nologo
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
-$exe = Join-Path $Root "build\bin\Release\表格工具.exe"
+$exe = Join-Path $Root "build\bin\Release\笨蛋表格.exe"
 Write-Host ""
 if (Test-Path $exe) {
     Write-Host "PASS: Build artifact found at $exe"

@@ -5,7 +5,7 @@
 ### 项目重构：架构向 D:\项目开发\超级中键 看齐
 
 - 源码移入 `src/TableCleaner/`，构建产物统一到 `build/`，发布产物统一到 `artifacts/`。
-- 项目名称确定为「表格工具」，AssemblyName 改为 `表格工具`。
+- 项目名称确定为「笨蛋表格」，AssemblyName 改为 `笨蛋表格`。
 - 新增 `Directory.Build.props`：集中管理版本号和输出路径。
 - 版本重置为 1.0.0。
 - 新增 `scripts/run-dev.ps1`、`scripts/build-release.ps1`、`scripts/run-self-check.ps1`。
