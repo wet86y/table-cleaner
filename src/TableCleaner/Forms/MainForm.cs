@@ -57,7 +57,7 @@ public partial class MainForm : Form
     private int _lastSelectedRow = -1;
     public MainForm()
     {
-        Text = $"表格清洗工具 v{Application.ProductVersion} - 绿色便携版";
+        Text = $"笨蛋表格 v{Application.ProductVersion}";
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(1200, 800);
         StartPosition = FormStartPosition.CenterScreen;
@@ -85,6 +85,10 @@ public partial class MainForm : Form
         toolMenu.DropDownItems.Add(new ToolStripSeparator());
         toolMenu.DropDownItems.Add("模板库管理(&T)...", null, (_, _) => OpenTemplateEditor());
         _menuStrip.Items.Add(toolMenu);
+
+        var helpMenu = new ToolStripMenuItem("帮助(&H)");
+        helpMenu.DropDownItems.Add("关于(&A)...", null, (_, _) => new AboutForm().ShowDialog(this));
+        _menuStrip.Items.Add(helpMenu);
 
         // ---- Toolbar ----
         _toolStrip = new ToolStrip

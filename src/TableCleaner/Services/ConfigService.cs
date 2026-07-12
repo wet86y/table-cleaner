@@ -7,8 +7,16 @@ namespace TableCleaner.Services;
 /// <summary>配置持久化：profiles.json、replacements.json（含分组）、配置包 zip</summary>
 public static class ConfigService
 {
-    private static readonly string BaseDir = Path.Combine(
+    private static readonly string AppDataDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "笨蛋表格");
+
+    private static readonly string BaseDir = Path.Combine(AppDataDir, "config");
+
+    private static readonly string LegacyBaseDir = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory, "config");
+
+    private static bool _initialized;
 
     private static readonly string ProfilesPath = Path.Combine(BaseDir, "profiles.json");
     private static readonly string ReplacementsPath = Path.Combine(BaseDir, "replacements.json");
@@ -28,7 +36,45 @@ public static class ConfigService
 
     public static void EnsureDirs()
     {
+        if (!_initialized)
+        {
+            _initialized = true;
+            Directory.CreateDirectory(BaseDir);
+            MigrateLegacyConfig();
+        }
+
         Directory.CreateDirectory(BaseDir);
+    }
+
+    /// <summary>
+    /// 将旧版 exe 隔壁 config/ 中的配置文件迁到 %LocalAppData%。
+    /// 仅当目标目录为空时执行一次性迁移。
+    /// </summary>
+    private static void MigrateLegacyConfig()
+    {
+        try
+        {
+            if (!Directory.Exists(LegacyBaseDir))
+            {
+                return;
+            }
+
+            var destFiles = Directory.GetFiles(BaseDir, "*.json");
+            if (destFiles.Length > 0)
+            {
+                return;
+            }
+
+            foreach (var file in Directory.GetFiles(LegacyBaseDir, "*.json"))
+            {
+                var dest = Path.Combine(BaseDir, Path.GetFileName(file));
+                File.Copy(file, dest, overwrite: false);
+            }
+        }
+        catch
+        {
+            // Best-effort migration; fall back to defaults on failure.
+        }
     }
 
     public static string GetExportsDir()
