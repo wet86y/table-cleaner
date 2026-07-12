@@ -86,9 +86,9 @@ public partial class MainForm : Form
         toolMenu.DropDownItems.Add("模板库管理(&T)...", null, (_, _) => OpenTemplateEditor());
         _menuStrip.Items.Add(toolMenu);
 
-        var helpMenu = new ToolStripMenuItem("帮助(&H)");
-        helpMenu.DropDownItems.Add("关于(&A)...", null, (_, _) => new AboutForm().ShowDialog(this));
-        _menuStrip.Items.Add(helpMenu);
+        var aboutMenu = new ToolStripMenuItem("关于(&A)");
+        aboutMenu.Click += (_, _) => new AboutForm().ShowDialog(this);
+        _menuStrip.Items.Add(aboutMenu);
 
         // ---- Toolbar ----
         _toolStrip = new ToolStrip
