@@ -5,7 +5,8 @@
 - 复现并确认 v1.1.0 正式 EXE 缺少 `DesktopUpdateKit.Resources.UpdaterStub.exe`，失败原因是增量发布复用了此前普通 Release 构建生成的不含 Stub 程序集。
 - 发布入口新增 Release 清理，最终 EXE 的 `--verify-release` 检查可验证内嵌 Stub 存在且具有有效 PE 文件头。
 - 最终 EXE 的 `--verify-ui-layout` 检查覆盖下载中和下载完成状态，验证状态、进度、按钮及更新说明的垂直边界不重叠。
-- `scripts\build-release.ps1` 已通过，输出 `Release executable self-check passed: updater resource and update layouts are valid.`。
+- `scripts\build-release.ps1` 已通过，输出 `Release executable verification passed: --verify-release, --verify-ui-layout`。
+- 共享 `DesktopUpdateKit` 会在构建后和资产准备前统一执行该验证，并拒绝不合法的验证开关。
 
 ## 2026-07-13 v1.1.0 结果正确性基线
 

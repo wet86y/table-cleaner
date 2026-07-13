@@ -7,6 +7,10 @@
   "artifactsDirectory": "artifacts/\u7b28\u86cb\u8868\u683c-win-x64",
   "runtimeIdentifier": "win-x64",
   "enableSingleFileCompression": true,
+  "releaseVerificationArguments": [
+    "--verify-release",
+    "--verify-ui-layout"
+  ],
   "about": {
     "displayName": "\u7b28\u86cb\u8868\u683c",
     "developer": "wet86y",

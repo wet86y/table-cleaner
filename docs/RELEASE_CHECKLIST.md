@@ -12,7 +12,7 @@
 
 - [ ] 执行 `.\scripts\run-self-check.ps1`。
 - [ ] 执行 `.\scripts\build-release.ps1`。
-- [ ] 构建末尾出现 `Release executable self-check passed`；该检查会验证最终单文件 EXE 内嵌更新器及更新窗口关键状态无控件重叠。
+- [ ] 构建末尾出现 `Release executable verification passed`；共享工具会按 `releaseVerificationArguments` 验证最终单文件 EXE 内嵌更新器及更新窗口关键状态无控件重叠。
 - [ ] 正式 EXE 位于 `artifacts\笨蛋表格-win-x64\笨蛋表格.exe`。
 - [ ] 正式目录不包含 PDB 或本地配置数据。
 - [ ] 剪贴板、文件导入、清洗、模板、替换、合并和导出完成核心手测。
