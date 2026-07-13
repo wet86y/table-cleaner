@@ -10,7 +10,7 @@ public static class CleaningService
     {
         TableDataValidator.EnsureValid(source, "Column selection input");
         if (kept.Count == source.ColumnCount &&
-            source.Headers.All(h => kept.Contains(h, StringComparer.OrdinalIgnoreCase)))
+            source.Headers.SequenceEqual(kept, StringComparer.OrdinalIgnoreCase))
             return Clone(source);
 
         var indices = kept

@@ -11,6 +11,7 @@ public static class ReplacementService
     /// <param name="scopeColumns">如果非 null，仅替换这些列（多列）</param>
     public static TableData Apply(TableData source, List<ReplacementRule> rules, List<string>? scopeColumns = null)
     {
+        TableDataValidator.EnsureValid(source, "Replacement input");
         var result = CleaningService.Clone(source);
 
         var colIndices = scopeColumns is { Count: > 0 }
@@ -41,6 +42,7 @@ public static class ReplacementService
             }
         }
 
+        TableDataValidator.EnsureValid(result, "Replacement");
         return result;
     }
 
@@ -113,11 +115,11 @@ public static class ReplacementService
     /// <summary>拓展替换：写入模式（覆盖 / 插值）</summary>
     private static string MakeUniqueHeader(TableData data, string name)
     {
-        if (!data.Headers.Contains(name)) return name;
+        if (!data.Headers.Contains(name, StringComparer.OrdinalIgnoreCase)) return name;
         for (int suffix = 2; ; suffix++)
         {
             var candidate = $"{name}_{suffix}";
-            if (!data.Headers.Contains(candidate))
+            if (!data.Headers.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 return candidate;
         }
     }

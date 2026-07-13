@@ -1,4 +1,3 @@
-using System.Text;
 using TableCleaner.Models;
 
 namespace TableCleaner.Services;
@@ -14,67 +13,32 @@ public static class ClipboardImportService
         var text = Clipboard.GetText();
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0) return null;
+        var records = ParseRecords(text);
+        if (records.Count == 0) return null;
 
-        char delimiter = DetectDelimiter(lines[0]);
-        return ParseDelimitedText(lines, delimiter);
+        // A single copied row is data, not both a header and a duplicated data row.
+        return TabularDataBuilder.FromRecords(records, firstRecordIsHeader: records.Count > 1);
     }
 
-    private static char DetectDelimiter(string firstLine)
+    public static List<List<string>> ParseRecords(string text)
     {
-        int tabCount = firstLine.Count(c => c == '\t');
-        int commaCount = firstLine.Count(c => c == ',');
+        if (string.IsNullOrWhiteSpace(text))
+            return new List<List<string>>();
 
-        if (tabCount >= commaCount && tabCount > 0) return '\t';
-        if (commaCount > 0) return ',';
-        return '\t';
+        if (text.Length > 0 && text[0] == '\uFEFF')
+            text = text[1..];
+
+        var delimiter = DetectDelimiter(text);
+        return DelimitedTextParser.Parse(text, delimiter);
     }
 
-    private static TableData ParseDelimitedText(string[] lines, char delimiter)
+    private static char DetectDelimiter(string text)
     {
-        var result = new TableData();
-        // Safe parse for empty fields
-        var rawHeaders = SplitLine(lines[0], delimiter);
-        result.Headers = HeaderNormalizationService.Normalize(rawHeaders);
+        var firstLineEnd = text.IndexOfAny(new[] { '\r', '\n' });
+        var firstLine = firstLineEnd >= 0 ? text[..firstLineEnd] : text;
+        var tabColumns = DelimitedTextParser.ParseLine(firstLine, '\t').Count;
+        var commaColumns = DelimitedTextParser.ParseLine(firstLine, ',').Count;
 
-        // If only 1 line, it's both header and data
-        int startRow = lines.Length == 1 ? 0 : 1;
-        for (int i = startRow; i < lines.Length; i++)
-        {
-            var fields = SplitLine(lines[i], delimiter);
-            var row = new List<string>(new string[result.ColumnCount]);
-            for (int j = 0; j < fields.Length && j < result.ColumnCount; j++)
-                row[j] = fields[j].Trim();
-            result.Rows.Add(row);
-        }
-        return result;
-    }
-
-    private static string[] SplitLine(string line, char delimiter)
-    {
-        var result = new List<string>();
-        var current = new StringBuilder();
-        bool inQuotes = false;
-
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"')
-            {
-                if (i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
-                else inQuotes = !inQuotes;
-            }
-            else if (c == delimiter && !inQuotes)
-            {
-                result.Add(current.ToString()); current.Clear();
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-        result.Add(current.ToString());
-        return result.ToArray();
+        return tabColumns >= commaColumns && tabColumns > 1 ? '\t' : ',';
     }
 }

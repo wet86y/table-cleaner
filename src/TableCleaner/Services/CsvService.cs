@@ -6,13 +6,17 @@ namespace TableCleaner.Services;
 /// <summary>CSV 导入/导出</summary>
 public static class CsvService
 {
+    static CsvService()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     public static TableData? Import(string filePath)
     {
         if (!File.Exists(filePath)) return null;
 
-        string text;
-        try { text = File.ReadAllText(filePath, Encoding.UTF8); }
-        catch { return null; }
+        var text = ReadText(filePath);
+        if (text == null) return null;
 
         var firstLineEnd = text.IndexOfAny(new[] { '\r', '\n' });
         var first = firstLineEnd >= 0 ? text[..firstLineEnd] : text;
@@ -23,50 +27,59 @@ public static class CsvService
         catch (InvalidDataException) { return null; }
         if (records.Count == 0) return null;
 
-        var result = new TableData();
-        var rawHeaders = records[0];
-        foreach (var h in rawHeaders)
-            result.Headers.Add(string.IsNullOrWhiteSpace(h) ? $"Col{result.Headers.Count + 1}" : h.Trim());
-
-        for (int i = 1; i < records.Count; i++)
-        {
-            var fields = records[i];
-            var row = new List<string>(new string[result.ColumnCount]);
-            for (int j = 0; j < fields.Count && j < result.ColumnCount; j++)
-                row[j] = fields[j].Trim();
-            result.Rows.Add(row);
-        }
-        TableDataValidator.EnsureValid(result, "CSV import");
-        return result;
+        return TabularDataBuilder.FromRecords(records, firstRecordIsHeader: true, generatedHeaderPrefix: "Col");
     }
 
     public static bool Export(TableData data, string filePath)
     {
         try
         {
-            TableDataValidator.EnsureValid(data, "CSV export input");
+            var normalized = ExportNormalizationService.Prepare(data);
             var sb = new StringBuilder();
-            sb.AppendLine(string.Join(",", data.Headers.Select(Escape)));
+            sb.AppendLine(string.Join(",", normalized.Headers.Select(value =>
+                ExportNormalizationService.EscapeDelimitedField(value, ','))));
 
-            foreach (var row in data.Rows)
+            foreach (var row in normalized.Rows)
             {
-                var vals = row.Select(v => Escape(v ?? "")).ToList();
-                // Pad if short
-                while (vals.Count < data.ColumnCount) vals.Add("");
-                sb.AppendLine(string.Join(",", vals.Take(data.ColumnCount)));
+                var vals = row.Select(value =>
+                    ExportNormalizationService.EscapeDelimitedField(value, ','));
+                sb.AppendLine(string.Join(",", vals));
             }
 
-            File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
             return true;
         }
         catch { return false; }
     }
 
-    private static string Escape(string field)
+    public static string? ReadText(string filePath)
     {
-        if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-            return $"\"{field.Replace("\"", "\"\"")}\"";
-        return field;
+        try
+        {
+            var bytes = File.ReadAllBytes(filePath);
+            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+                return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+            if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+                return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+
+            try
+            {
+                return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(bytes);
+            }
+            catch (DecoderFallbackException)
+            {
+                return Encoding.GetEncoding(
+                    936,
+                    EncoderFallback.ExceptionFallback,
+                    DecoderFallback.ExceptionFallback).GetString(bytes);
+            }
+        }
+        catch
+        {
+            return null;
+        }
     }
 
 }

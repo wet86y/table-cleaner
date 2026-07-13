@@ -5,6 +5,8 @@ var tests = new (string Name, Action Run)[]
 {
     ("Delimited parser preserves empty cells", DelimitedParserPreservesEmptyCells),
     ("Delimited parser handles quotes and line breaks", DelimitedParserHandlesQuotesAndLineBreaks),
+    ("Tabular builder preserves wider data rows", TabularBuilderPreservesWiderRows),
+    ("Column selection preserves requested order", ColumnSelectionPreservesRequestedOrder),
     ("Pseudo table preserves empty TSV columns", PseudoTablePreservesEmptyTsvColumns),
     ("Delimiter detection prefers TSV over inner commas", DelimiterDetectionPrefersTsvOverInnerCommas),
     ("One-column cleanup keeps delimited header", OneColumnCleanupKeepsDelimitedHeader),
@@ -12,7 +14,11 @@ var tests = new (string Name, Action Run)[]
     ("Extended replacement keeps target indexes stable", ExtendedReplacementKeepsTargetIndexesStable),
     ("Merge keys cannot collide on separator text", MergeKeysCannotCollide),
     ("Merge rejects invalid numeric values", MergeRejectsInvalidNumericValues),
+    ("Merge rejects overlapping group and sum columns", MergeRejectsOverlappingColumns),
+    ("Selection merge rejects ragged input", SelectionMergeRejectsRaggedInput),
+    ("Extended replacement headers are case-insensitively unique", ExtendedReplacementHeadersAreCaseInsensitivelyUnique),
     ("Validator rejects ragged rows", ValidatorRejectsRaggedRows),
+    ("Export normalization escapes CSV fields", ExportNormalizationEscapesCsvFields),
 };
 
 var failures = new List<string>();
@@ -52,6 +58,27 @@ static void DelimitedParserHandlesQuotesAndLineBreaks()
     Equal(3, records.Count);
     Equal("Shanghai, China", records[1][1]);
     Equal("line1\r\nline2", records[2][1]);
+}
+
+static void TabularBuilderPreservesWiderRows()
+{
+    var records = new List<List<string>>
+    {
+        new() { "A", "B" },
+        new() { "1", "2", "3" }
+    };
+    var result = TabularDataBuilder.FromRecords(records, firstRecordIsHeader: true)
+        ?? throw new Exception("Builder returned null.");
+    SequenceEqual(new[] { "A", "B", "Column3" }, result.Headers);
+    SequenceEqual(new[] { "1", "2", "3" }, result.Rows[0]);
+}
+
+static void ColumnSelectionPreservesRequestedOrder()
+{
+    var source = Table(new[] { "A", "B" }, new[] { "1", "2" });
+    var result = CleaningService.KeepColumns(source, new List<string> { "B", "A" });
+    SequenceEqual(new[] { "B", "A" }, result.Headers);
+    SequenceEqual(new[] { "2", "1" }, result.Rows[0]);
 }
 
 static void PseudoTablePreservesEmptyTsvColumns()
@@ -147,10 +174,50 @@ static void MergeRejectsInvalidNumericValues()
         MergeService.Merge(source, new List<string> { "Group" }, new List<string> { "Amount" }));
 }
 
+static void MergeRejectsOverlappingColumns()
+{
+    var source = Table(new[] { "Group", "Amount" }, new[] { "A", "1" });
+    Throws<InvalidDataException>(() =>
+        MergeService.Merge(source, new List<string> { "Group" }, new List<string> { "Group" }));
+}
+
+static void SelectionMergeRejectsRaggedInput()
+{
+    var source = Table(new[] { "A", "B" }, new[] { "only-one" });
+    Throws<InvalidDataException>(() =>
+        SelectionMergeService.MergeColumns(source, new List<int> { 0, 1 }));
+}
+
+static void ExtendedReplacementHeadersAreCaseInsensitivelyUnique()
+{
+    var source = Table(new[] { "Code", "city" }, new[] { "A", "existing" });
+    var group = new ReplacementGroup
+    {
+        Type = ReplacementType.Extended,
+        ExtendWriteMode = ExtendWriteMode.Insert,
+        ScopeColumns = new List<string> { "Code" },
+        ExtraColumnNames = new List<string> { "City" },
+        Rules = new List<ReplacementRule>
+        {
+            new() { Before = "A", After = "B", ExtraValues = new List<string> { "Hangzhou" } }
+        }
+    };
+
+    var result = ReplacementService.ApplyGroup(source, group);
+    SequenceEqual(new[] { "Code", "City_2", "city" }, result.Headers);
+}
+
 static void ValidatorRejectsRaggedRows()
 {
     var source = Table(new[] { "A", "B" }, new[] { "only-one" });
     Equal(1, TableDataValidator.Validate(source).Count);
+}
+
+static void ExportNormalizationEscapesCsvFields()
+{
+    Equal("\"a,b\"", ExportNormalizationService.EscapeDelimitedField("a,b", ','));
+    Equal("\"a\"\"b\"", ExportNormalizationService.EscapeDelimitedField("a\"b", ','));
+    Equal("plain", ExportNormalizationService.EscapeDelimitedField("plain", ','));
 }
 
 static TableData Table(string[] headers, string[] row) => new()

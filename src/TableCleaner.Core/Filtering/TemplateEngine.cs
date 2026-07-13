@@ -10,6 +10,7 @@ public static class TemplateEngine
     {
         if (table == null) throw new ArgumentNullException(nameof(table));
         if (filter == null) throw new ArgumentNullException(nameof(filter));
+        TableDataValidator.EnsureValid(table, "Template filter input");
 
         var enabledItems = filter.MatchItems;
         if (enabledItems.Count == 0)
@@ -56,6 +57,7 @@ public static class TemplateEngine
     {
         if (table == null) throw new ArgumentNullException(nameof(table));
         if (template == null) throw new ArgumentNullException(nameof(template));
+        TableDataValidator.EnsureValid(table, "Template input");
 
         if (template.TargetHeaders.Count == 0)
         {
@@ -70,6 +72,8 @@ public static class TemplateEngine
             Rows = mappedRows
         };
 
+        TableDataValidator.EnsureValid(result, "Template output");
+
         logger?.Invoke($"[ApplyTemplate] 完成：{result.ColumnCount} 列 x {result.RowCount} 行");
         return result;
     }
@@ -83,19 +87,22 @@ public static class TemplateEngine
     {
         if (table == null) throw new ArgumentNullException(nameof(table));
         if (template == null) throw new ArgumentNullException(nameof(template));
+        TableDataValidator.EnsureValid(table, "Filter template input");
 
         var matchValueColumns = template.TargetHeaders
             .Select((Column, Index) => new { Column, Index })
             .Where(x => !string.IsNullOrWhiteSpace(x.Column.MatchValue))
             .ToList();
 
-        if (matchValueColumns.Count == 0)
-            return ApplyLegacyFilterTemplate(table, template, filter, logger);
+        var result = matchValueColumns.Count switch
+        {
+            0 => ApplyLegacyFilterTemplate(table, template, filter, logger),
+            1 => ApplySingleFilterTemplate(table, template, matchValueColumns[0].Column, logger),
+            _ => ApplyGroupedFilterTemplate(table, template, matchValueColumns.Select(x => x.Index).ToList(), logger)
+        };
 
-        if (matchValueColumns.Count == 1)
-            return ApplySingleFilterTemplate(table, template, matchValueColumns[0].Column, logger);
-
-        return ApplyGroupedFilterTemplate(table, template, matchValueColumns.Select(x => x.Index).ToList(), logger);
+        TableDataValidator.EnsureValid(result, "Filter template output");
+        return result;
     }
 
     private static TableData ApplyLegacyFilterTemplate(TableData table, CleanTemplate template, CleanTemplateFilter? filter, Action<string>? logger)

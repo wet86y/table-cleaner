@@ -10,7 +10,7 @@
 - `TableCleaner.Core`：平台无关的表格模型、解析、列映射、分组合并、替换、筛选和结构校验。
 - `TableCleaner.Core.Tests`：无需 UI 的核心回归测试，由 `run-self-check.ps1` 强制执行。
 
-第一阶段通过 linked compile 将已有纯处理源码的编译所有权移入 Core，以降低一次性移动大量文件的风险。后续可以按 `Domain`、`Parse`、`ColumnMapping`、`GroupMerge`、`Replacement`、`Filtering`、`Validation` 逐步移动物理文件，行为必须由回归测试锁定。
+纯处理源码已经物理迁移到 `TableCleaner.Core`，并按 `Domain`、`Parse`、`ColumnMapping`、`GroupMerge`、`Replacement`、`Filtering`、`ExportNormalization`、`Validation` 分目录维护。WinForms 项目只通过项目引用调用这些能力，不再 linked compile 原项目文件。
 
 ## 强制正确性规则
 
@@ -21,6 +21,10 @@
 5. 扩展替换插列后必须保持列名、扩展值和原目标列索引一致。
 6. 导出前必须运行表结构校验；校验失败时不得生成文件。
 7. “完整配置包”必须包含方案、替换分组、模板和筛选模板，并兼容旧包。
+8. 分隔记录构造不得静默截断额外单元格；缺少表头时必须生成稳定的补充表头。
+9. 分组列与求和列不得重叠；处理失败必须保持原数据和撤销栈不变。
+10. 筛选视图变化必须清除旧选择，禁止把旧显示行号用于新的筛选结果。
+11. 配置文件必须原子写入；配置包只接受大小受限的根级 `config.json`。
 
 ## 验证入口
 

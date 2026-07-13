@@ -40,11 +40,12 @@ public sealed class AboutForm : Form
     {
         Icon = AppVisuals.WindowIcon;
         Text = "关于 笨蛋表格";
-        Size = new Size(520, 520);
+        ClientSize = new Size(504, 300);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
+        AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Microsoft YaHei", 9F);
 
         var y = 12;
@@ -57,35 +58,44 @@ public sealed class AboutForm : Form
             Text = "笨蛋表格",
             Font = new Font("Microsoft YaHei", 20F, FontStyle.Bold),
             Location = new Point(pad, y),
-            AutoSize = true
+            Size = new Size(w, 46),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            UseCompatibleTextRendering = true
         };
-        y += _lblTitle.Height + 6;
+        y = _lblTitle.Bottom + 2;
 
         // Version
         _lblVersion = new Label
         {
             Text = $"版本 {GetCurrentVersion()}",
             Location = new Point(pad, y),
-            AutoSize = true,
+            Size = new Size(w, 22),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.Gray
         };
-        y += _lblVersion.Height + 4;
+        y = _lblVersion.Bottom + 2;
 
         // Developer
         _lblDeveloper = new Label
         {
             Text = "开发者：wet86y",
             Location = new Point(pad, y),
-            AutoSize = true
+            Size = new Size(w, 22),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft
         };
-        y += _lblDeveloper.Height + 2;
+        y = _lblDeveloper.Bottom;
 
         // GitHub link
         _lnkGitHub = new LinkLabel
         {
             Text = "GitHub 项目仓库与更新记录",
             Location = new Point(pad, y),
-            AutoSize = true,
+            Size = new Size(w, 22),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
             LinkBehavior = LinkBehavior.HoverUnderline
         };
         _lnkGitHub.LinkClicked += (_, _) =>
@@ -96,7 +106,7 @@ public sealed class AboutForm : Form
             };
             System.Diagnostics.Process.Start(psi);
         };
-        y += _lnkGitHub.Height + pad;
+        y = _lnkGitHub.Bottom + pad;
         _updateSectionTop = y;
 
         // --- Update section ---
@@ -105,7 +115,8 @@ public sealed class AboutForm : Form
         {
             Text = "检查更新",
             Location = new Point(pad, y),
-            Size = new Size(100, 32)
+            Size = new Size(104, 32),
+            UseVisualStyleBackColor = true
         };
         _btnCheckUpdate.Click += async (_, _) => await CheckUpdateAsync();
         y += _btnCheckUpdate.Height + 4;
@@ -116,7 +127,7 @@ public sealed class AboutForm : Form
             Text = "点击\"检查更新\"获取最新版本。",
             Location = new Point(pad, y),
             AutoSize = true,
-            ForeColor = Color.Gray,
+            ForeColor = SystemColors.GrayText,
             MaximumSize = new Size(w, 0)
         };
         y += _lblStatus.Height + 8;
@@ -191,8 +202,6 @@ public sealed class AboutForm : Form
             _chkAcceleration, _btnSwitchNode,
             _lblStatus, _prgDownload, _grpReleaseNotes
         });
-
-        LayoutUpdateControls();
 
         SharedUpdateSession.Changed += OnSessionChanged;
         Load += (_, _) => ApplySessionSnapshot(SharedUpdateSession.Snapshot);
@@ -516,16 +525,27 @@ public sealed class AboutForm : Form
         const int contentWidth = 480;
         const int gap = 8;
         var y = _updateSectionTop;
+        var statusPlaced = false;
 
         if (_btnCheckUpdate.Visible)
         {
             _btnCheckUpdate.Location = new Point(pad, y);
-            y = _btnCheckUpdate.Bottom + gap;
+            var statusWidth = contentWidth - _btnCheckUpdate.Width - 12;
+            _lblStatus.MaximumSize = new Size(statusWidth, 0);
+            var statusHeight = _lblStatus.PreferredHeight;
+            _lblStatus.Location = new Point(
+                _btnCheckUpdate.Right + 12,
+                y + Math.Max(0, (_btnCheckUpdate.Height - statusHeight) / 2));
+            y = Math.Max(_btnCheckUpdate.Bottom, _lblStatus.Bottom) + gap;
+            statusPlaced = true;
         }
 
-        _lblStatus.Location = new Point(pad, y);
-        _lblStatus.MaximumSize = new Size(contentWidth, 0);
-        y += Math.Max(_lblStatus.PreferredHeight, 20) + gap;
+        if (!statusPlaced)
+        {
+            _lblStatus.Location = new Point(pad, y);
+            _lblStatus.MaximumSize = new Size(contentWidth, 0);
+            y += Math.Max(_lblStatus.PreferredHeight, 20) + gap;
+        }
 
         if (_prgDownload.Visible)
         {
@@ -628,5 +648,6 @@ public sealed class AboutForm : Form
         _btnPauseResume.Click += PauseResumeDownload_Click;
         _btnBackground.Click += BackgroundDownload_Click;
         _btnCancel.Click += CancelDownload_Click;
+        LayoutUpdateControls();
     }
 }

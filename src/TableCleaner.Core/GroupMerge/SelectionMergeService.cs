@@ -22,6 +22,8 @@ public static class SelectionMergeService
         if (source == null || selectedColumnIndices == null || selectedColumnIndices.Count < 2)
             return null;
 
+        TableDataValidator.EnsureValid(source, "Selection column merge input");
+
         // Validate indices
         var validIndices = selectedColumnIndices
             .Where(i => i >= 0 && i < source.ColumnCount)
@@ -79,6 +81,7 @@ public static class SelectionMergeService
         }
 
         // v2.4.2: no longer remove columns that became empty; keep structure intact.
+        TableDataValidator.EnsureValid(result, "Selection column merge");
         return result;
     }
 
@@ -95,6 +98,8 @@ public static class SelectionMergeService
     {
         if (source == null || selectedRowIndices == null || selectedRowIndices.Count < 2)
             return null;
+
+        TableDataValidator.EnsureValid(source, "Selection row merge input");
 
         // Validate indices
         var validIndices = selectedRowIndices
@@ -155,6 +160,7 @@ public static class SelectionMergeService
         }
 
         // v2.4.2: no longer remove rows that became empty; keep structure intact.
+        TableDataValidator.EnsureValid(result, "Selection row merge");
         return result;
     }
 
@@ -168,6 +174,8 @@ public static class SelectionMergeService
     public static TableData RemoveEmptyRowsAndColumns(TableData source)
     {
         if (source == null) return new TableData();
+
+        TableDataValidator.EnsureValid(source, "Empty row/column cleanup input");
 
         var result = source.Clone();
 
@@ -206,6 +214,7 @@ public static class SelectionMergeService
             }
         }
 
+        TableDataValidator.EnsureValid(result, "Empty row/column cleanup");
         return result;
     }
 }

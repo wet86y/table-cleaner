@@ -21,6 +21,7 @@ public partial class MainForm : Form
     private ColumnSelectorForm? _columnSelectorForm; // track open non-modal instance
     private ReplacementEditorForm? _replacementEditorForm;
     private TemplateEditorForm? _templateEditorForm; // track open non-modal instance
+    private AboutForm? _aboutForm;
 
     // Undo / Reset
     private readonly Stack<TableData?> _operationHistory = new();
@@ -43,6 +44,11 @@ public partial class MainForm : Form
     private readonly Button _btnFilterApply;
     private readonly Button _btnFilterClear;
     private readonly BindingSource _filterBindingSource;
+
+    private sealed record FilterColumnOption(string DisplayName, string DataColumnName)
+    {
+        public override string ToString() => DisplayName;
+    }
 
     // Edit Mode
     private bool _editMode;
@@ -89,7 +95,7 @@ public partial class MainForm : Form
         _menuStrip.Items.Add(toolMenu);
 
         var aboutMenu = new ToolStripMenuItem("关于(&A)");
-        aboutMenu.Click += (_, _) => new AboutForm().ShowDialog(this);
+        aboutMenu.Click += (_, _) => OpenAbout();
         _menuStrip.Items.Add(aboutMenu);
 
         // ---- Toolbar ----
@@ -374,7 +380,7 @@ public partial class MainForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Filter = "数据文件|*.csv;*.xlsx;*.xls;*.txt|CSV 文件|*.csv|Excel 文件|*.xlsx;*.xls|文本文件|*.txt|所有文件|*.*",
+            Filter = "数据文件|*.csv;*.xlsx;*.xlsm;*.xls;*.txt|CSV 文件|*.csv|Excel 文件|*.xlsx;*.xlsm;*.xls|文本文件|*.txt|所有文件|*.*",
             Title = "选择要导入的数据文件"
         };
 
@@ -395,8 +401,13 @@ public partial class MainForm : Form
                     _lbSheetList.Visible = false;
                     SetStatus($"已从 CSV 导入 {data.RowCount} 行 × {data.ColumnCount} 列");
                 }
+                else
+                {
+                    MessageBox.Show("无法识别此 CSV 文件，文件可能为空、损坏或引号未闭合。",
+                        "导入失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
-            else if (ext == ".xlsx" || ext == ".xls")
+            else if (ext is ".xlsx" or ".xlsm" or ".xls")
             {
                 var sheets = ExcelService.ImportAllSheets(path);
                 if (sheets.Count == 0)
@@ -427,7 +438,13 @@ public partial class MainForm : Form
             else if (ext == ".txt")
             {
                 // 文本文件：优先尝试伪表格解析，回退 CSV
-                var text = File.ReadAllText(path, Encoding.UTF8);
+                var text = CsvService.ReadText(path);
+                if (text == null)
+                {
+                    MessageBox.Show("无法读取此文本文件，文件编码或内容可能已损坏。",
+                        "导入失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
                 // 去除 BOM
                 if (text.Length > 0 && text[0] == '\uFEFF')
                     text = text[1..];
@@ -498,6 +515,24 @@ public partial class MainForm : Form
     #endregion
 
     #region Processing
+
+    private void OpenAbout()
+    {
+        if (_aboutForm is not null && !_aboutForm.IsDisposed)
+        {
+            if (_aboutForm.WindowState == FormWindowState.Minimized)
+            {
+                _aboutForm.WindowState = FormWindowState.Normal;
+            }
+
+            _aboutForm.Activate();
+            return;
+        }
+
+        _aboutForm = new AboutForm();
+        _aboutForm.FormClosed += (_, _) => _aboutForm = null;
+        _aboutForm.Show(this);
+    }
 
     private void OpenColumnSelector()
     {
@@ -651,11 +686,18 @@ public partial class MainForm : Form
         }
 
         var beforeApply = sourceTable.Clone();
-
-        var result = template.Kind == TemplateKind.Filter
-            ? TemplateEngine.ApplyFilterTemplate(sourceTable, template, form.Filters.FirstOrDefault(f => f.AppliedTemplateId == template.Id), null, null)
-            : TemplateEngine.ApplyTemplate(sourceTable, template, null, null);
-        if (result == null) return;
+        TableData result;
+        try
+        {
+            result = template.Kind == TemplateKind.Filter
+                ? TemplateEngine.ApplyFilterTemplate(sourceTable, template, form.Filters.FirstOrDefault(f => f.AppliedTemplateId == template.Id), null, null)
+                : TemplateEngine.ApplyTemplate(sourceTable, template, null, null);
+        }
+        catch (Exception ex)
+        {
+            ShowError($"模板应用失败，原数据未修改：{ex.Message}");
+            return;
+        }
 
         // 模板应用也是一次真实处理操作：无论此前是否已有 _processedTable，都必须支持撤销。
         _operationHistory.Push(beforeApply);
@@ -694,7 +736,16 @@ public partial class MainForm : Form
         }
 
         _operationHistory.Push(source.Clone());
-        _processedTable = ReplacementService.ApplyGroup(source, group);
+        try
+        {
+            _processedTable = ReplacementService.ApplyGroup(source, group);
+        }
+        catch (Exception ex)
+        {
+            _operationHistory.Pop();
+            ShowError($"替换失败，原数据未修改：{ex.Message}");
+            return;
+        }
         _hasReplaceApplied = true;
         ClearFilter();
         RefreshGrid();
@@ -735,10 +786,7 @@ public partial class MainForm : Form
                 var cleaned = PseudoTableCleanService.ParsePseudoTableText(clipText);
                 if (cleaned != null)
                 {
-                    // Save current state for undo
-                    if (_currentTable != null)
-                        _operationHistory.Push(_currentTable.Clone());
-
+                    // Clipboard content becomes a new import baseline.
                     _currentTable = cleaned;
                     _processedTable = null;
                     _originalData = cleaned.Clone();
@@ -1029,8 +1077,12 @@ public partial class MainForm : Form
         // Refresh filter column dropdown
         _cmbFilterColumn.Items.Clear();
         _cmbFilterColumn.Items.Add("全部列");
-        foreach (var h in source.Headers)
-            _cmbFilterColumn.Items.Add(h);
+        for (var index = 0; index < source.Headers.Count; index++)
+        {
+            _cmbFilterColumn.Items.Add(new FilterColumnOption(
+                source.Headers[index],
+                dt.Columns[index + 1].ColumnName));
+        }
         _cmbFilterColumn.SelectedIndex = 0;
     }
 
@@ -1043,10 +1095,14 @@ public partial class MainForm : Form
             return;
         }
 
-        var escaped = keyword.Replace("'", "''").Replace("%", "[%]").Replace("[", "[[]");
-        var colName = _cmbFilterColumn.SelectedItem?.ToString();
+        var escaped = keyword
+            .Replace("[", "[[]")
+            .Replace("%", "[%]")
+            .Replace("*", "[*]")
+            .Replace("'", "''");
+        var selectedColumn = _cmbFilterColumn.SelectedItem as FilterColumnOption;
 
-        if (string.IsNullOrEmpty(colName) || colName == "全部列")
+        if (selectedColumn == null)
         {
             // Filter across all columns
             var dt = _filterBindingSource.DataSource as DataTable;
@@ -1055,21 +1111,27 @@ public partial class MainForm : Form
             foreach (DataColumn col in dt.Columns)
             {
                 if (col.ColumnName == "序号") continue;
-                filters.Add($"[{col.ColumnName}] LIKE '%{escaped}%'");
+                filters.Add($"[{EscapeDataColumnName(col.ColumnName)}] LIKE '%{escaped}%'");
             }
             _filterBindingSource.Filter = string.Join(" OR ", filters);
         }
         else
         {
-            _filterBindingSource.Filter = $"[{colName}] LIKE '%{escaped}%'";
+            _filterBindingSource.Filter = $"[{EscapeDataColumnName(selectedColumn.DataColumnName)}] LIKE '%{escaped}%'";
         }
+
+        ClearSelection();
     }
 
     private void ClearFilter()
     {
         _filterBindingSource.Filter = null;
         _txtFilterKeyword.Clear();
+        ClearSelection();
     }
+
+    private static string EscapeDataColumnName(string name) =>
+        name.Replace("\\", "\\\\").Replace("]", "\\]");
 
     /// <summary>绘制行号</summary>
     private void DgvData_RowPostPaint(object? sender, DataGridViewRowPostPaintEventArgs e)
@@ -1935,9 +1997,20 @@ public partial class MainForm : Form
         // Push undo state
         _operationHistory.Push(source.Clone());
 
-        var merged = SelectionMergeService.MergeColumns(source, dataColIndices);
+        TableData? merged;
+        try
+        {
+            merged = SelectionMergeService.MergeColumns(source, dataColIndices);
+        }
+        catch (Exception ex)
+        {
+            _operationHistory.Pop();
+            ShowError($"列合并失败，原数据未修改：{ex.Message}");
+            return;
+        }
         if (merged == null)
         {
+            _operationHistory.Pop();
             SetStatus("列合并失败：无法处理。");
             return;
         }
@@ -2034,9 +2107,20 @@ public partial class MainForm : Form
         // Push undo state
         _operationHistory.Push(source.Clone());
 
-        var merged = SelectionMergeService.MergeRows(source, dataRowIndices);
+        TableData? merged;
+        try
+        {
+            merged = SelectionMergeService.MergeRows(source, dataRowIndices);
+        }
+        catch (Exception ex)
+        {
+            _operationHistory.Pop();
+            ShowError($"行合并失败，原数据未修改：{ex.Message}");
+            return;
+        }
         if (merged == null)
         {
+            _operationHistory.Pop();
             SetStatus("行合并失败：无法处理。");
             return;
         }
@@ -2064,10 +2148,15 @@ public partial class MainForm : Form
         // Push undo state
         _operationHistory.Push(source.Clone());
 
-        var cleaned = SelectionMergeService.RemoveEmptyRowsAndColumns(source);
-        if (cleaned == null)
+        TableData cleaned;
+        try
         {
-            SetStatus("清理失败。");
+            cleaned = SelectionMergeService.RemoveEmptyRowsAndColumns(source);
+        }
+        catch (Exception ex)
+        {
+            _operationHistory.Pop();
+            ShowError($"清理失败，原数据未修改：{ex.Message}");
             return;
         }
 

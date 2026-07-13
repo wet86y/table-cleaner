@@ -13,15 +13,23 @@ public static class MergeService
         var groupIndices = groupColumns
             .Select(g => source.GetColIndex(g))
             .Where(i => i >= 0)
-            .ToHashSet();
+            .Distinct()
+            .OrderBy(i => i)
+            .ToList();
 
         var sumIndices = sumColumns
             .Select(s => source.GetColIndex(s))
             .Where(i => i >= 0)
-            .ToHashSet();
+            .Distinct()
+            .OrderBy(i => i)
+            .ToList();
 
         if (groupIndices.Count == 0)
             return CleaningService.Clone(source);
+
+        var overlappingIndex = groupIndices.Intersect(sumIndices).FirstOrDefault(-1);
+        if (overlappingIndex >= 0)
+            throw new InvalidDataException($"列“{source.Headers[overlappingIndex]}”不能同时作为分组列和求和列。");
 
         var groups = new Dictionary<string, List<DataRow>>();
         // Assign row IDs for grouping

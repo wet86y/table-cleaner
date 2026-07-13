@@ -162,10 +162,25 @@ public class ColumnSelectorForm : Form
                 MessageBox.Show("请至少选择一个分组列。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            var overlap = GroupColumns.Intersect(SumColumns, StringComparer.OrdinalIgnoreCase).ToList();
+            if (overlap.Count > 0)
+            {
+                MessageBox.Show($"以下列不能同时作为分组列和求和列：\n{string.Join("、", overlap)}",
+                    "规则冲突", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             MergeApplied?.Invoke(this, EventArgs.Empty);
         };
         _btnApplyKeep = new Button { Text = "应用列清洗（保留勾选列）", AutoSize = true, BackColor = Color.LightSteelBlue, Margin = new Padding(6, 0, 6, 0) };
-        _btnApplyKeep.Click += (_, _) => { KeepApplied?.Invoke(this, EventArgs.Empty); };
+        _btnApplyKeep.Click += (_, _) =>
+        {
+            if (_clbKeep.CheckedItems.Count == 0)
+            {
+                MessageBox.Show("请至少保留一列。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            KeepApplied?.Invoke(this, EventArgs.Empty);
+        };
         var btnUsage = new Button { Text = "📖 使用说明", AutoSize = true, Margin = new Padding(6, 0, 6, 0) };
         btnUsage.Click += (_, _) => { 
             MessageBox.Show("列选择：勾选要保留的列并点击\"应用列清洗\"。\n合并规则：勾选分组列和求和列后点击\"应用合并规则\"。\n注意：列清洗和合并规则不能同时应用。", "使用说明", MessageBoxButtons.OK, MessageBoxIcon.Information); 

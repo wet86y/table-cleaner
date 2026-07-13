@@ -817,8 +817,8 @@ public class TemplateEditorForm : Form
                 return;
             }
 
-            var data = ClipboardImportService.Import();
-            if (data == null || data.RowCount == 0)
+            var records = ClipboardImportService.ParseRecords(Clipboard.GetText());
+            if (records.Count == 0)
             {
                 MessageBox.Show("无法解析剪切板数据。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -829,12 +829,13 @@ public class TemplateEditorForm : Form
 
             // Parse: clipboard rows = matrix rows (output/primary header, backups, match value)
             // clipboard columns = template output column groups
-            for (int ci = 0; ci < data.ColumnCount; ci++)
+            var columnCount = records.Max(row => row.Count);
+            for (int ci = 0; ci < columnCount; ci++)
             {
-                var header = data.Rows.Count > 0 && ci < data.Rows[0].Count ? data.Rows[0][ci] ?? "" : "";
-                var backup1 = data.Rows.Count > 1 && ci < data.Rows[1].Count ? data.Rows[1][ci] ?? "" : "";
-                var backup2 = data.Rows.Count > 2 && ci < data.Rows[2].Count ? data.Rows[2][ci] ?? "" : "";
-                var matchVal = data.Rows.Count > 3 && ci < data.Rows[3].Count ? data.Rows[3][ci] ?? "" : "";
+                var header = records.Count > 0 && ci < records[0].Count ? records[0][ci] ?? "" : "";
+                var backup1 = records.Count > 1 && ci < records[1].Count ? records[1][ci] ?? "" : "";
+                var backup2 = records.Count > 2 && ci < records[2].Count ? records[2][ci] ?? "" : "";
+                var matchVal = records.Count > 3 && ci < records[3].Count ? records[3][ci] ?? "" : "";
 
                 if (string.IsNullOrWhiteSpace(header)) continue;
 

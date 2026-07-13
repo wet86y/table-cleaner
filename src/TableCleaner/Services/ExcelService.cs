@@ -148,16 +148,16 @@ public static class ExcelService
     {
         try
         {
-            TableDataValidator.EnsureValid(data, "XLSX export input");
+            var normalized = ExportNormalizationService.Prepare(data);
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("Sheet1");
 
-            for (int c = 0; c < data.ColumnCount; c++)
-                ws.Cell(1, c + 1).Value = data.Headers[c];
+            for (int c = 0; c < normalized.ColumnCount; c++)
+                ws.Cell(1, c + 1).Value = normalized.Headers[c];
 
-            for (int r = 0; r < data.RowCount; r++)
-                for (int c = 0; c < data.ColumnCount; c++)
-                    ws.Cell(r + 2, c + 1).Value = data.Rows[r][c] ?? "";
+            for (int r = 0; r < normalized.RowCount; r++)
+                for (int c = 0; c < normalized.ColumnCount; c++)
+                    ws.Cell(r + 2, c + 1).Value = normalized.Rows[r][c] ?? "";
 
             ws.Columns().AdjustToContents();
             workbook.SaveAs(filePath);

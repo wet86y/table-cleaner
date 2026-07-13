@@ -59,16 +59,11 @@ public static class ConfigService
                 return;
             }
 
-            var destFiles = Directory.GetFiles(BaseDir, "*.json");
-            if (destFiles.Length > 0)
-            {
-                return;
-            }
-
             foreach (var file in Directory.GetFiles(LegacyBaseDir, "*.json"))
             {
                 var dest = Path.Combine(BaseDir, Path.GetFileName(file));
-                File.Copy(file, dest, overwrite: false);
+                if (!File.Exists(dest))
+                    File.Copy(file, dest, overwrite: false);
             }
         }
         catch
@@ -108,8 +103,7 @@ public static class ConfigService
     public static void SaveProfiles(List<CleanProfile> profiles)
     {
         EnsureDirs();
-        var json = JsonSerializer.Serialize(profiles, JsonOpts);
-        File.WriteAllText(ProfilesPath, json);
+        WriteTextAtomically(ProfilesPath, JsonSerializer.Serialize(profiles, JsonOpts));
     }
 
     #endregion
@@ -182,8 +176,7 @@ public static class ConfigService
     public static void SaveReplacementGroups(List<ReplacementGroup> groups)
     {
         EnsureDirs();
-        var json = JsonSerializer.Serialize(groups, JsonOpts);
-        File.WriteAllText(ReplacementsPath, json);
+        WriteTextAtomically(ReplacementsPath, JsonSerializer.Serialize(groups, JsonOpts));
     }
 
     #endregion
@@ -205,16 +198,23 @@ public static class ConfigService
             };
             var json = JsonSerializer.Serialize(pkg, JsonOpts);
 
-            var tempDir = Path.Combine(Path.GetTempPath(), "tcex_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDir);
-            File.WriteAllText(Path.Combine(tempDir, "config.json"), json);
-
             if (File.Exists(zipPath)) File.Delete(zipPath);
-            ZipFile.CreateFromDirectory(tempDir, zipPath);
-            Directory.Delete(tempDir, true);
+            using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+            var entry = archive.CreateEntry("config.json", CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
+            writer.Write(json);
             return true;
         }
-        catch { return false; }
+        catch
+        {
+            try
+            {
+                if (File.Exists(zipPath)) File.Delete(zipPath);
+            }
+            catch { }
+            return false;
+        }
     }
 
     /// <summary>导入配置包，覆盖当前配置</summary>
@@ -224,19 +224,28 @@ public static class ConfigService
 
         try
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), "tcim_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDir);
-            ZipFile.ExtractToDirectory(zipPath, tempDir);
+            using var archive = ZipFile.OpenRead(zipPath);
+            var entry = archive.Entries.SingleOrDefault(candidate =>
+                string.Equals(candidate.FullName.Replace('\\', '/'), "config.json", StringComparison.OrdinalIgnoreCase));
+            const long maxConfigBytes = 16 * 1024 * 1024;
+            if (entry == null || entry.Length <= 0 || entry.Length > maxConfigBytes)
+                return null;
 
-            var jsonFile = Path.Combine(tempDir, "config.json");
-            if (!File.Exists(jsonFile)) { Directory.Delete(tempDir, true); return null; }
-
-            var json = File.ReadAllText(jsonFile);
+            using var stream = entry.Open();
+            using var reader = new StreamReader(stream);
+            var json = reader.ReadToEnd();
             var pkg = JsonSerializer.Deserialize<ConfigPackage>(json, JsonLenient);
-            Directory.Delete(tempDir, true);
 
             if (pkg != null)
             {
+                pkg.Profiles ??= new List<CleanProfile>();
+                pkg.Replacements ??= new List<ReplacementRule>();
+                if (pkg.ReplacementGroups != null)
+                {
+                    foreach (var group in pkg.ReplacementGroups)
+                        group.Rules ??= new List<ReplacementRule>();
+                }
+
                 SaveProfiles(pkg.Profiles);
                 // Save groups if available, otherwise save flat replacements
                 if (pkg.ReplacementGroups is { Count: > 0 })
@@ -276,8 +285,7 @@ public static class ConfigService
     public static void SaveTemplates(List<CleanTemplate> templates)
     {
         EnsureDirs();
-        var json = JsonSerializer.Serialize(templates, JsonOpts);
-        File.WriteAllText(TemplatesPath, json);
+        WriteTextAtomically(TemplatesPath, JsonSerializer.Serialize(templates, JsonOpts));
     }
 
     private static readonly string FiltersPath = Path.Combine(BaseDir, "templateFilters.json");
@@ -305,7 +313,7 @@ public static class ConfigService
                     if (migrated != null)
                     {
                         // 写回迁移后的 JSON
-                        File.WriteAllText(FiltersPath, migrated);
+                        WriteTextAtomically(FiltersPath, migrated);
                         return JsonSerializer.Deserialize<List<CleanTemplateFilter>>(migrated, JsonLenient) ?? new();
                     }
                 }
@@ -385,8 +393,22 @@ public static class ConfigService
     public static void SaveFilters(List<CleanTemplateFilter> filters)
     {
         EnsureDirs();
-        var json = JsonSerializer.Serialize(filters, JsonOpts);
-        File.WriteAllText(FiltersPath, json);
+        WriteTextAtomically(FiltersPath, JsonSerializer.Serialize(filters, JsonOpts));
+    }
+
+    private static void WriteTextAtomically(string path, string content)
+    {
+        var tempPath = path + $".tmp.{Environment.ProcessId}.{Guid.NewGuid():N}";
+        try
+        {
+            File.WriteAllText(tempPath, content);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
     }
 
     #endregion
