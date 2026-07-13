@@ -1,4 +1,3 @@
-using System.Reflection;
 using DesktopUpdateKit;
 
 namespace TableCleaner.Forms;
@@ -35,9 +34,11 @@ public sealed class AboutForm : Form
     private readonly ProgressBar _prgDownload;
     private readonly GroupBox _grpReleaseNotes;
     private readonly TextBox _txtReleaseNotes;
+    private readonly int _updateSectionTop;
 
     public AboutForm()
     {
+        Icon = AppVisuals.WindowIcon;
         Text = "关于 笨蛋表格";
         Size = new Size(520, 520);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -96,6 +97,7 @@ public sealed class AboutForm : Form
             System.Diagnostics.Process.Start(psi);
         };
         y += _lnkGitHub.Height + pad;
+        _updateSectionTop = y;
 
         // --- Update section ---
         // Check update button
@@ -129,7 +131,7 @@ public sealed class AboutForm : Form
         y += _prgDownload.Height + 8;
 
         // Action buttons row 1
-        _btnInstall = CreateActionButton("下载更新", pad, ref y);
+        _btnInstall = CreateActionButton("下载更新", pad, ref y, visible: false);
         _btnPauseResume = CreateActionButton("暂停", _btnInstall.Right + 6, ref y, visible: false);
         _btnBackground = CreateActionButton("后台下载", pad, ref y, visible: false);
         _btnCancel = CreateActionButton("取消", _btnBackground.Right + 6, ref y, visible: false);
@@ -140,7 +142,8 @@ public sealed class AboutForm : Form
             Text = "使用加速节点",
             Location = new Point(pad, y + 2),
             AutoSize = true,
-            Checked = true
+            Checked = true,
+            Visible = false
         };
         _chkAcceleration.CheckedChanged += AccelerationToggle_Changed;
 
@@ -189,6 +192,8 @@ public sealed class AboutForm : Form
             _lblStatus, _prgDownload, _grpReleaseNotes
         });
 
+        LayoutUpdateControls();
+
         SharedUpdateSession.Changed += OnSessionChanged;
         Load += (_, _) => ApplySessionSnapshot(SharedUpdateSession.Snapshot);
         FormClosing += (_, _) =>
@@ -221,14 +226,17 @@ public sealed class AboutForm : Form
 
         _checkingForUpdate = true;
         _btnCheckUpdate.Enabled = false;
+        _btnCheckUpdate.Text = "正在检查...";
+        _btnCheckUpdate.Visible = true;
         _prgDownload.Visible = false;
         _prgDownload.Value = 0;
         _prgDownload.Style = ProgressBarStyle.Blocks;
         _availableUpdate = null;
         _chkAcceleration.Visible = false;
-        _btnInstall.Visible = false;
+        HideAllActionButtons();
         _grpReleaseNotes.Visible = false;
         _lblStatus.Text = "正在检查更新...";
+        LayoutUpdateControls();
 
         try
         {
@@ -249,6 +257,8 @@ public sealed class AboutForm : Form
         {
             _checkingForUpdate = false;
             _btnCheckUpdate.Enabled = true;
+            _btnCheckUpdate.Text = "重新检查";
+            LayoutUpdateControls();
         }
     }
 
@@ -269,7 +279,10 @@ public sealed class AboutForm : Form
         _btnInstall.Text = $"下载更新 {release.Version}";
         _btnInstall.Enabled = true;
         _btnInstall.Visible = true;
+        _btnCheckUpdate.Visible = true;
+        _btnCheckUpdate.Text = "重新检查";
         _lblStatus.Text = $"发现新版本 {release.Version}。确认说明后，点击\"下载更新\"。";
+        LayoutUpdateControls();
     }
 
     private async void InstallUpdate_Click(object? sender, EventArgs e)
@@ -395,11 +408,14 @@ public sealed class AboutForm : Form
                 _lblStatus.Text = $"下载失败：{snapshot.ErrorMessage ?? "未知错误"}";
                 break;
         }
+
+        LayoutUpdateControls();
     }
 
     private void SetDownloadingUi(UpdateDownloadSessionSnapshot snapshot)
     {
         _btnCheckUpdate.Enabled = false;
+        _btnCheckUpdate.Visible = false;
         _chkAcceleration.Visible = false;
         HideAllActionButtons();
         _btnPauseResume.Text = "暂停下载";
@@ -413,7 +429,6 @@ public sealed class AboutForm : Form
         _prgDownload.Visible = true;
         _prgDownload.Style = ProgressBarStyle.Blocks;
 
-        RepositionActionButtons(false);
         if (snapshot.Progress is not null)
         {
             ReportDownloadProgress(snapshot.Progress, snapshot.ContinueInBackground);
@@ -422,12 +437,14 @@ public sealed class AboutForm : Form
         {
             _prgDownload.Style = ProgressBarStyle.Marquee;
             _lblStatus.Text = "正在下载并校验更新...";
+            LayoutUpdateControls();
         }
     }
 
     private void SetPausedUi(UpdateDownloadSessionSnapshot snapshot)
     {
         _btnCheckUpdate.Enabled = false;
+        _btnCheckUpdate.Visible = false;
         _chkAcceleration.Visible = false;
         HideAllActionButtons();
         _btnPauseResume.Text = "继续下载";
@@ -441,18 +458,20 @@ public sealed class AboutForm : Form
         _prgDownload.Visible = true;
         _prgDownload.Style = ProgressBarStyle.Blocks;
 
-        RepositionActionButtons(false);
         if (snapshot.Progress is not null)
         {
             ReportDownloadProgress(snapshot.Progress, background: false);
         }
 
         _lblStatus.Text = "下载已暂停。关闭窗口不会取消；可后台继续。";
+        LayoutUpdateControls();
     }
 
     private void SetCompletedUi(UpdateDownloadSessionSnapshot snapshot)
     {
         _btnCheckUpdate.Enabled = true;
+        _btnCheckUpdate.Visible = true;
+        _btnCheckUpdate.Text = "重新检查";
         _chkAcceleration.Visible = false;
         HideAllActionButtons();
         _prgDownload.Visible = true;
@@ -463,12 +482,14 @@ public sealed class AboutForm : Form
         _btnInstall.Visible = true;
         _lblStatus.Text = "更新已下载并完成校验。点击\"立即安装\"后退出并替换程序。";
 
-        RepositionActionButtons(false);
+        LayoutUpdateControls();
     }
 
     private void ResetDownloadUi()
     {
         _btnCheckUpdate.Enabled = true;
+        _btnCheckUpdate.Visible = true;
+        _btnCheckUpdate.Text = "重新检查";
         _chkAcceleration.Visible = _availableUpdate is not null;
         _prgDownload.Visible = false;
         _prgDownload.Style = ProgressBarStyle.Blocks;
@@ -477,7 +498,7 @@ public sealed class AboutForm : Form
         _btnInstall.Enabled = _availableUpdate is not null;
         _btnInstall.Visible = _availableUpdate is not null;
 
-        RepositionActionButtons(true);
+        LayoutUpdateControls();
     }
 
     private void HideAllActionButtons()
@@ -489,29 +510,72 @@ public sealed class AboutForm : Form
         _btnSwitchNode.Visible = false;
     }
 
-    private void RepositionActionButtons(bool singleButton)
+    private void LayoutUpdateControls()
     {
-        if (singleButton)
+        const int pad = 12;
+        const int contentWidth = 480;
+        const int gap = 8;
+        var y = _updateSectionTop;
+
+        if (_btnCheckUpdate.Visible)
         {
-            _btnInstall.Location = new Point(12, _prgDownload.Bottom + 8);
-            _btnPauseResume.Visible = false;
-            _btnBackground.Visible = false;
-            _btnCancel.Visible = false;
-            _btnSwitchNode.Visible = false;
-        }
-        else
-        {
-            _btnPauseResume.Location = new Point(12, _prgDownload.Bottom + 8);
-            _btnSwitchNode.Location = new Point(_btnPauseResume.Right + 6, _prgDownload.Bottom + 8);
-            _btnBackground.Location = new Point(12, _btnPauseResume.Bottom + 6);
-            _btnCancel.Location = new Point(_btnBackground.Right + 6, _btnPauseResume.Bottom + 6);
-            _btnInstall.Location = _btnBackground.Location;
+            _btnCheckUpdate.Location = new Point(pad, y);
+            y = _btnCheckUpdate.Bottom + gap;
         }
 
-        if (!singleButton && _availableUpdate is not null)
+        _lblStatus.Location = new Point(pad, y);
+        _lblStatus.MaximumSize = new Size(contentWidth, 0);
+        y += Math.Max(_lblStatus.PreferredHeight, 20) + gap;
+
+        if (_prgDownload.Visible)
         {
-            _btnInstall.Location = _btnBackground.Location;
+            _prgDownload.Location = new Point(pad, y);
+            y = _prgDownload.Bottom + gap;
         }
+
+        if (_btnInstall.Visible)
+        {
+            _btnInstall.Location = new Point(pad, y);
+            y = _btnInstall.Bottom + gap;
+        }
+
+        if (_btnPauseResume.Visible)
+        {
+            _btnPauseResume.Location = new Point(pad, y);
+            if (_btnSwitchNode.Visible)
+            {
+                _btnSwitchNode.Location = new Point(_btnPauseResume.Right + 6, y + 2);
+            }
+            y = Math.Max(_btnPauseResume.Bottom, _btnSwitchNode.Visible ? _btnSwitchNode.Bottom : 0) + 6;
+        }
+
+        if (_btnBackground.Visible || _btnCancel.Visible)
+        {
+            if (_btnBackground.Visible)
+            {
+                _btnBackground.Location = new Point(pad, y);
+            }
+            if (_btnCancel.Visible)
+            {
+                _btnCancel.Location = new Point(_btnBackground.Visible ? _btnBackground.Right + 6 : pad, y);
+            }
+            y = Math.Max(_btnBackground.Visible ? _btnBackground.Bottom : 0, _btnCancel.Visible ? _btnCancel.Bottom : 0) + gap;
+        }
+
+        if (_chkAcceleration.Visible)
+        {
+            _chkAcceleration.Location = new Point(pad, y + 2);
+            y = _chkAcceleration.Bottom + gap;
+        }
+
+        if (_grpReleaseNotes.Visible)
+        {
+            _grpReleaseNotes.Location = new Point(pad, y);
+            _grpReleaseNotes.Size = new Size(contentWidth, 160);
+            y = _grpReleaseNotes.Bottom + pad;
+        }
+
+        ClientSize = new Size(504, Math.Max(250, y));
     }
 
     private void ShowReleaseNotes(UpdateRelease release)
@@ -527,6 +591,7 @@ public sealed class AboutForm : Form
 
         _txtReleaseNotes.Text = notes;
         _grpReleaseNotes.Visible = true;
+        LayoutUpdateControls();
     }
 
     private void ReportDownloadProgress(UpdateDownloadProgress progress, bool background)
@@ -544,6 +609,7 @@ public sealed class AboutForm : Form
             : progress.ActiveConnectionCount > 1 ? $" · {progress.ActiveConnectionCount}路" : "";
         var prefix = background ? "后台下载中" : "下载中";
         _lblStatus.Text = $"{prefix}... {FormatSize(progress.BytesReceived)}/{total} · {FormatSize((long)progress.BytesPerSecond)}/秒{conn}{node}";
+        LayoutUpdateControls();
     }
 
     private static string FormatSize(long bytes)
@@ -552,16 +618,7 @@ public sealed class AboutForm : Form
         return $"{bytes / 1024d / 1024d:F1} MB";
     }
 
-    private static string GetCurrentVersion()
-    {
-        var informational = Assembly.GetEntryAssembly()?
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion;
-
-        return string.IsNullOrWhiteSpace(informational)
-            ? (Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0")
-            : informational.Split('+', 2)[0];
-    }
+    private static string GetCurrentVersion() => AppVisuals.DisplayVersion;
 
     protected override void OnLoad(EventArgs e)
     {

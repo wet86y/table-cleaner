@@ -19,6 +19,7 @@ public class ScopeColumnDialog : Form
 
     public ScopeColumnDialog(List<string> allColumns, List<string>? initialChecked = null)
     {
+        Icon = AppVisuals.WindowIcon;
         _allColumns = allColumns;
 
         Text = "选择作用列（留空=全表）";

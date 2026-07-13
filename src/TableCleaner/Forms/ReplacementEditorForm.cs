@@ -53,6 +53,7 @@ public class ReplacementEditorForm : Form
 
     public ReplacementEditorForm(List<string>? allColumns = null)
     {
+        Icon = AppVisuals.WindowIcon;
         _allColumns = allColumns;
         _groups = ConfigService.LoadReplacementGroups();
 

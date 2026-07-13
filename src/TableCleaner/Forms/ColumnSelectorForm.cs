@@ -41,6 +41,7 @@ public class ColumnSelectorForm : Form
 
     public ColumnSelectorForm(List<string> allColumns, List<CleanProfile> existingProfiles, CleanProfile? current = null)
     {
+        Icon = AppVisuals.WindowIcon;
         _allColumns = allColumns;
         _profiles = existingProfiles;
 

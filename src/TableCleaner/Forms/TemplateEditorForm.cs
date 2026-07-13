@@ -72,6 +72,7 @@ public class TemplateEditorForm : Form
 
     public TemplateEditorForm(List<string>? allColumns = null)
     {
+        Icon = AppVisuals.WindowIcon;
         _allColumns = allColumns;
 
         Text = "模板库管理";

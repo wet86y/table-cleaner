@@ -57,7 +57,8 @@ public partial class MainForm : Form
     private int _lastSelectedRow = -1;
     public MainForm()
     {
-        Text = $"笨蛋表格 v{Application.ProductVersion}";
+        Icon = AppVisuals.WindowIcon;
+        Text = $"笨蛋表格 v{AppVisuals.DisplayVersion}";
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(1200, 800);
         StartPosition = FormStartPosition.CenterScreen;
@@ -261,10 +262,18 @@ public partial class MainForm : Form
 
         // ---- Status bar ----
         _statusStrip = new StatusStrip();
+        var appStatusIcon = new ToolStripStatusLabel
+        {
+            Image = AppVisuals.StatusIcon,
+            AutoSize = false,
+            Width = 28,
+            ImageAlign = ContentAlignment.MiddleCenter,
+            ToolTipText = "Application identity"
+        };
         _lblStatus = new ToolStripStatusLabel("就绪") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         _lblRowCol = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(10, 0, 5, 0) };
         _lblProfile = new ToolStripStatusLabel("") { BorderSides = ToolStripStatusLabelBorderSides.Left, Padding = new Padding(10, 0, 5, 0) };
-        _statusStrip.Items.AddRange(new ToolStripItem[] { _lblStatus, _lblRowCol, _lblProfile });
+        _statusStrip.Items.AddRange(new ToolStripItem[] { appStatusIcon, _lblStatus, _lblRowCol, _lblProfile });
 
         // ---- Stable table layout: Menu -> Toolbar -> Filter -> DataGrid -> Status ----
         var leftPanel = new Panel { Dock = DockStyle.Left, Width = 180, Padding = new Padding(5) };
