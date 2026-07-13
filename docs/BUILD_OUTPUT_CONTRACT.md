@@ -2,7 +2,7 @@
 
 本项目只有两类可运行产物。它们都从 `Release` 配置生成，但用途和维护位置不同。
 
-项目根目录为 `D:\项目开发\笨蛋表格`。`Directory.Build.props` 将所有编译输出集中到根目录 `build`，因此源码目录下不应再出现 `bin` 或 `obj`。
+`Directory.Build.props` 将所有编译输出集中到当前仓库根目录 `build`，因此源码目录下不应再出现 `bin` 或 `obj`。构建前必须已初始化 `shared\DesktopUpdateKit` 子模块。
 
 | 类型 | 唯一维护目录 | 生成方式 | 用途 |
 |---|---|---|---|

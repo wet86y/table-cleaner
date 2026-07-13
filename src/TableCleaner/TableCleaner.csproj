@@ -15,6 +15,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationHighResolutionSupport>true</ApplicationHighResolutionSupport>
     <ApplicationDefaultFont>Microsoft YaHei, 9pt</ApplicationDefaultFont>
+    <DesktopUpdateKitRoot>$(MSBuildThisFileDirectory)..\..\shared\DesktopUpdateKit</DesktopUpdateKitRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,9 +29,14 @@
     <EmbeddedResource Include="$(UpdaterStubPath)"
                       LogicalName="DesktopUpdateKit.Resources.UpdaterStub.exe"
                       Condition="'$(UpdaterStubPath)' != '' and Exists('$(UpdaterStubPath)')" />
-    <Compile Include="..\..\..\共享空间\DesktopUpdateKit\src\DesktopUpdateKit\*.cs"
+    <Compile Include="$(DesktopUpdateKitRoot)\src\DesktopUpdateKit\*.cs"
              Link="Services\DesktopUpdateKit\%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <Target Name="EnsureDesktopUpdateKitSubmodule" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(DesktopUpdateKitRoot)\src\DesktopUpdateKit\UpdateClient.cs')"
+           Text="DesktopUpdateKit submodule is missing. Run: git submodule update --init --recursive" />
+  </Target>
 
   <!-- Copy config/exports to output -->
   <ItemGroup>
