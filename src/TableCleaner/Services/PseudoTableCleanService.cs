@@ -92,13 +92,34 @@ public static partial class PseudoTableCleanService
             return null;
 
         var sb = new StringBuilder();
+        if (source.Headers.Count > 0 && ContainsPotentialDelimiter(source.Headers[0]))
+            sb.AppendLine(source.Headers[0]);
         foreach (var row in source.Rows)
         {
             if (row.Count > 0 && !string.IsNullOrEmpty(row[0]))
                 sb.AppendLine(row[0]);
         }
 
-        return ParsePseudoTableText(sb.ToString());
+        var combinedText = sb.ToString();
+        var result = ParsePseudoTableText(combinedText);
+        if (result is null || source.Headers.Count == 0 || !ContainsPotentialDelimiter(source.Headers[0]))
+            return result;
+
+        var normalizedText = combinedText.Replace("\r\n", "\n").Replace("\r", "\n");
+        var delimiter = DetectDelimiter(normalizedText.Split('\n'));
+        if (delimiter is null)
+            return result;
+
+        var parsedHeader = SplitByDelimiter(source.Headers[0], delimiter)
+            .Select(value => value.Trim())
+            .ToList();
+        if (parsedHeader.Count != result.ColumnCount)
+            return result;
+
+        result.Headers = parsedHeader;
+        if (result.Rows.Count > 0 && result.Rows[0].SequenceEqual(parsedHeader))
+            result.Rows.RemoveAt(0);
+        return result;
     }
 
     /// <summary>
@@ -145,8 +166,9 @@ public static partial class PseudoTableCleanService
         // 2) 优先选"列数更少"的（避免内层分隔符抢赢外层，如 | 内含逗号的情况）
         // 3) 列数相同则按 Score 降序
         var best = candidates
-            .OrderBy(c => c.DetectedColumnCount)   // 列少优先
-            .ThenByDescending(c => c.Score)          // 分高优先
+            .OrderByDescending(c => c.Score)
+            .ThenByDescending(c => c.Consistency)
+            .ThenByDescending(c => c.LineCoverage)
             .First();
 
         return best;
@@ -167,28 +189,12 @@ public static partial class PseudoTableCleanService
     {
         // 对竖线和加号：用 Split 计数（因为它们可能是表格边框的一部分）
         // 对其他字符：用 Count 计数
-        bool isPipeOrPlus = ch == '|' || ch == '+';
-
         var countPerLine = new List<int>();
         int linesWithDelimiter = 0;
 
         foreach (var line in lines)
         {
-            int count;
-            if (isPipeOrPlus)
-            {
-                // 竖线/加号：Split 后段数 - 1 = 分隔符数
-                // 但要排除分隔线行（已被过滤）
-                var segments = line.Split(ch);
-                // 去除首尾空段（竖线表格的 |xxx|xxx| 格式首尾 Split 产生空串）
-                int nonEmptySegments = segments.Count(s => !string.IsNullOrWhiteSpace(s) || s == "");
-                // Split 产生的段数 - 1 = 分隔符实例数
-                count = segments.Length - 1;
-            }
-            else
-            {
-                count = line.Count(c => c == ch);
-            }
+            int count = DelimitedTextParser.CountDelimiterOutsideQuotes(line, ch);
 
             if (count > 0)
                 linesWithDelimiter++;
@@ -454,14 +460,7 @@ public static partial class PseudoTableCleanService
     /// </summary>
     private static List<string> SplitByChar(string line, char ch)
     {
-        if (ch == '|' || ch == '+')
-        {
-            // 竖线/加号表格：Split 保留空段，后续 Trim + 列对齐会处理
-            return line.Split(ch).ToList();
-        }
-
-        // 其他分隔符：RemoveEmptyEntries 避免连续分隔符产生大量空段
-        return line.Split(ch, StringSplitOptions.RemoveEmptyEntries).ToList();
+        return DelimitedTextParser.ParseLine(line, ch);
     }
 
     /// <summary>

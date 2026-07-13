@@ -1,4 +1,6 @@
 using TableCleaner.Models;
+using System.Globalization;
+using System.Text;
 
 namespace TableCleaner.Services;
 
@@ -7,6 +9,7 @@ public static class MergeService
 {
     public static TableData Merge(TableData source, List<string> groupColumns, List<string> sumColumns)
     {
+        TableDataValidator.EnsureValid(source, "Group merge input");
         var groupIndices = groupColumns
             .Select(g => source.GetColIndex(g))
             .Where(i => i >= 0)
@@ -24,7 +27,7 @@ public static class MergeService
         // Assign row IDs for grouping
         for (int ri = 0; ri < source.RowCount; ri++)
         {
-            var key = string.Join("|", groupIndices.Select(i => source.Rows[ri][i] ?? ""));
+            var key = BuildGroupKey(groupIndices.Select(i => GetCell(source.Rows[ri], i)));
             if (!groups.ContainsKey(key))
                 groups[key] = new List<DataRow>();
             groups[key].Add(new DataRow(source, ri));
@@ -45,14 +48,18 @@ public static class MergeService
             // Sum columns: sum numeric values
             foreach (int i in sumIndices)
             {
-                double sum = 0;
+                decimal sum = 0;
                 bool any = false;
                 foreach (var r in rows)
                 {
-                    if (double.TryParse(r.Values[i]?.Replace(",", "") ?? "0", out var v))
-                    { sum += v; any = true; }
+                    var raw = GetCell(r.Values, i).Trim();
+                    if (string.IsNullOrEmpty(raw)) continue;
+                    if (!TryParseNumber(raw, out var value))
+                        throw new InvalidDataException($"列“{source.Headers[i]}”包含无法求和的值“{raw}”。合并已取消，原数据未修改。");
+                    sum += value;
+                    any = true;
                 }
-                row[i] = any ? sum.ToString() : "";
+                row[i] = any ? sum.ToString(CultureInfo.InvariantCulture) : "";
             }
 
             // Other columns: if all same, keep one; if differ, distinct + join with +
@@ -77,11 +84,30 @@ public static class MergeService
             result.Rows.Add(row);
         }
 
+        TableDataValidator.EnsureValid(result, "Group merge");
         return result;
     }
 
     private record DataRow(TableData Table, int Index)
     {
         public List<string> Values => Table.Rows[Index];
+    }
+
+    private static string GetCell(List<string> row, int index) =>
+        index >= 0 && index < row.Count ? row[index] ?? "" : "";
+
+    private static string BuildGroupKey(IEnumerable<string> values)
+    {
+        var builder = new StringBuilder();
+        foreach (var value in values)
+            builder.Append(value.Length).Append(':').Append(value);
+        return builder.ToString();
+    }
+
+    private static bool TryParseNumber(string value, out decimal number)
+    {
+        const NumberStyles styles = NumberStyles.Number;
+        return decimal.TryParse(value, styles, CultureInfo.CurrentCulture, out number) ||
+               decimal.TryParse(value, styles, CultureInfo.InvariantCulture, out number);
     }
 }

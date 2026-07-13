@@ -20,10 +20,24 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\TableCleaner.Core\TableCleaner.Core.csproj" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="ExcelDataReader" Version="3.7.0" />
     <PackageReference Include="ExcelDataReader.DataSet" Version="3.7.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Models\**\*.cs" />
+    <Compile Remove="Services\CleaningService.cs" />
+    <Compile Remove="Services\HeaderNormalizationService.cs" />
+    <Compile Remove="Services\MergeService.cs" />
+    <Compile Remove="Services\SelectionMergeService.cs" />
+    <Compile Remove="Services\ReplacementService.cs" />
+    <Compile Remove="Services\TemplateEngine.cs" />
+    <Compile Remove="Services\PseudoTableCleanService.cs" />
+    <Compile Remove="Services\DelimitedTextParser.cs" />
+    <Compile Remove="Services\TableDataValidator.cs" />
   </ItemGroup>
 
   <ItemGroup>

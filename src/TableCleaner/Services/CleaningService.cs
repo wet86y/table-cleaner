@@ -8,6 +8,7 @@ public static class CleaningService
     /// <summary>只保留指定列</summary>
     public static TableData KeepColumns(TableData source, List<string> kept)
     {
+        TableDataValidator.EnsureValid(source, "Column selection input");
         if (kept.Count == source.ColumnCount &&
             source.Headers.All(h => kept.Contains(h, StringComparer.OrdinalIgnoreCase)))
             return Clone(source);
@@ -25,6 +26,7 @@ public static class CleaningService
             var newRow = indices.Select(i => i < row.Count ? row[i] ?? "" : "").ToList();
             result.Rows.Add(newRow);
         }
+        TableDataValidator.EnsureValid(result, "Column selection");
         return result;
     }
 

@@ -14,25 +14,29 @@ public static class CsvService
         try { text = File.ReadAllText(filePath, Encoding.UTF8); }
         catch { return null; }
 
-        var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0) return null;
-
-        var first = lines[0];
+        var firstLineEnd = text.IndexOfAny(new[] { '\r', '\n' });
+        var first = firstLineEnd >= 0 ? text[..firstLineEnd] : text;
         char delimiter = first.Contains('\t') ? '\t' : ',';
 
+        List<List<string>> records;
+        try { records = DelimitedTextParser.Parse(text, delimiter); }
+        catch (InvalidDataException) { return null; }
+        if (records.Count == 0) return null;
+
         var result = new TableData();
-        var rawHeaders = SplitLine(lines[0], delimiter);
+        var rawHeaders = records[0];
         foreach (var h in rawHeaders)
             result.Headers.Add(string.IsNullOrWhiteSpace(h) ? $"Col{result.Headers.Count + 1}" : h.Trim());
 
-        for (int i = 1; i < lines.Length; i++)
+        for (int i = 1; i < records.Count; i++)
         {
-            var fields = SplitLine(lines[i], delimiter);
+            var fields = records[i];
             var row = new List<string>(new string[result.ColumnCount]);
-            for (int j = 0; j < fields.Length && j < result.ColumnCount; j++)
+            for (int j = 0; j < fields.Count && j < result.ColumnCount; j++)
                 row[j] = fields[j].Trim();
             result.Rows.Add(row);
         }
+        TableDataValidator.EnsureValid(result, "CSV import");
         return result;
     }
 
@@ -40,6 +44,7 @@ public static class CsvService
     {
         try
         {
+            TableDataValidator.EnsureValid(data, "CSV export input");
             var sb = new StringBuilder();
             sb.AppendLine(string.Join(",", data.Headers.Select(Escape)));
 
@@ -64,26 +69,4 @@ public static class CsvService
         return field;
     }
 
-    private static string[] SplitLine(string line, char delimiter)
-    {
-        var result = new List<string>();
-        var current = new StringBuilder();
-        bool inQuotes = false;
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"')
-            {
-                if (i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
-                else inQuotes = !inQuotes;
-            }
-            else if (c == delimiter && !inQuotes)
-            {
-                result.Add(current.ToString()); current.Clear();
-            }
-            else { current.Append(c); }
-        }
-        result.Add(current.ToString());
-        return result.ToArray();
-    }
 }

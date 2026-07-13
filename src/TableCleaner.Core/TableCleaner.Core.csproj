@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!--
+    The first extraction step keeps source history in its current folders while
+    moving compilation ownership into this platform-neutral assembly. Files can
+    be relocated into Domain/Parse/etc. later without changing public behavior.
+  -->
+  <ItemGroup>
+    <Compile Include="..\TableCleaner\Models\**\*.cs" Link="Domain\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\TableCleaner\Services\CleaningService.cs" Link="ColumnMapping\CleaningService.cs" />
+    <Compile Include="..\TableCleaner\Services\HeaderNormalizationService.cs" Link="ColumnMapping\HeaderNormalizationService.cs" />
+    <Compile Include="..\TableCleaner\Services\MergeService.cs" Link="GroupMerge\MergeService.cs" />
+    <Compile Include="..\TableCleaner\Services\SelectionMergeService.cs" Link="GroupMerge\SelectionMergeService.cs" />
+    <Compile Include="..\TableCleaner\Services\ReplacementService.cs" Link="Replacement\ReplacementService.cs" />
+    <Compile Include="..\TableCleaner\Services\TemplateEngine.cs" Link="Filtering\TemplateEngine.cs" />
+    <Compile Include="..\TableCleaner\Services\PseudoTableCleanService.cs" Link="Parse\PseudoTableCleanService.cs" />
+    <Compile Include="..\TableCleaner\Services\DelimitedTextParser.cs" Link="Parse\DelimitedTextParser.cs" />
+    <Compile Include="..\TableCleaner\Services\TableDataValidator.cs" Link="Validation\TableDataValidator.cs" />
+  </ItemGroup>
+</Project>

@@ -55,6 +55,7 @@ public partial class MainForm : Form
     private readonly HashSet<int> _selectedRows = new();    // DGV row indices
     private int _lastSelectedCol = -1;
     private int _lastSelectedRow = -1;
+    private bool _isRefreshingGrid;
     public MainForm()
     {
         Icon = AppVisuals.WindowIcon;
@@ -533,7 +534,8 @@ public partial class MainForm : Form
 
         _operationHistory.Push((_processedTable ?? _currentTable)?.Clone());
         var kept = form.KeptColumns;
-        _processedTable = CleaningService.KeepColumns(_currentTable, kept);
+        var source = _processedTable ?? _currentTable;
+        _processedTable = CleaningService.KeepColumns(source, kept);
         _hasKeepApplied = true;
         _hasMergeApplied = false;
         _hasReplaceApplied = false;
@@ -551,7 +553,16 @@ public partial class MainForm : Form
         _operationHistory.Push((_processedTable ?? _currentTable)?.Clone());
         var source = _processedTable ?? _currentTable;
         var beforeRowCount = source.RowCount;
-        _processedTable = MergeService.Merge(source, form.GroupColumns, form.SumColumns);
+        try
+        {
+            _processedTable = MergeService.Merge(source, form.GroupColumns, form.SumColumns);
+        }
+        catch (InvalidDataException ex)
+        {
+            _operationHistory.Pop();
+            ShowError(ex.Message);
+            return;
+        }
         _hasMergeApplied = true;
         ClearFilter();
         RefreshGrid();
@@ -803,6 +814,7 @@ public partial class MainForm : Form
     {
         var source = DisplayTable;
         if (source == null) { NoDataTip(); return; }
+        if (!EnsureExportable(source)) return;
 
         using var dialog = new SaveFileDialog
         {
@@ -827,6 +839,7 @@ public partial class MainForm : Form
     {
         var source = DisplayTable;
         if (source == null) { NoDataTip(); return; }
+        if (!EnsureExportable(source)) return;
 
         using var dialog = new SaveFileDialog
         {
@@ -868,6 +881,16 @@ public partial class MainForm : Form
         }
     }
 
+    private bool EnsureExportable(TableData source)
+    {
+        var errors = TableDataValidator.Validate(source);
+        if (errors.Count == 0)
+            return true;
+
+        ShowError("导出前自检失败，已阻止生成可能错位的文件：\n\n" + string.Join("\n", errors.Take(5)));
+        return false;
+    }
+
     private void ImportConfig()
     {
         using var dialog = new OpenFileDialog
@@ -889,8 +912,9 @@ public partial class MainForm : Form
 
             _profiles.Clear();
             _profiles.AddRange(pkg.Profiles);
-            SetStatus($"已导入配置包：{pkg.Profiles.Count} 个方案，{pkg.Replacements.Count} 条替换规则");
-            MessageBox.Show($"配置包导入成功！\n{pkg.Profiles.Count} 个列方案\n{pkg.Replacements.Count} 条替换规则",
+            var templateCount = pkg.Templates?.Count ?? 0;
+            SetStatus($"已导入配置包：{pkg.Profiles.Count} 个方案，{pkg.Replacements.Count} 条替换规则，{templateCount} 个模板");
+            MessageBox.Show($"配置包导入成功！\n{pkg.Profiles.Count} 个列方案\n{pkg.Replacements.Count} 条替换规则\n{templateCount} 个模板",
                 "导入成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
@@ -918,6 +942,19 @@ public partial class MainForm : Form
     }
 
     private void RefreshGrid()
+    {
+        _isRefreshingGrid = true;
+        try
+        {
+            RefreshGridCore();
+        }
+        finally
+        {
+            _isRefreshingGrid = false;
+        }
+    }
+
+    private void RefreshGridCore()
     {
         var source = DisplayTable;
         if (source == null)
@@ -1191,17 +1228,10 @@ public partial class MainForm : Form
     private void DgvData_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
     {
         // Skip header and 序号列
-        if (e.RowIndex < 0 || e.ColumnIndex <= 0) return;
+        if (_isRefreshingGrid || !_editMode || e.RowIndex < 0 || e.ColumnIndex <= 0) return;
 
         var source = DisplayTable;
         if (source == null) return;
-
-        // Push undo state BEFORE the edit
-        _operationHistory.Push(source.Clone());
-
-        // Get the DataTable
-        var dt = _filterBindingSource.DataSource as DataTable;
-        if (dt == null) return;
 
         // Get the current (new) value
         var newValue = _dgvData.Rows[e.RowIndex].Cells[e.ColumnIndex].Value?.ToString() ?? "";
@@ -1209,42 +1239,13 @@ public partial class MainForm : Form
         // DGV column index → DataTable column index: colIndex - 1 (skip 序号列)
         int dataColIndex = e.ColumnIndex - 1;
 
-        // Find the actual row index in _processedTable
-        // Since the DGV may be sorted/filtered, we need to map back via DataTable
-        if (e.RowIndex < dt.Rows.Count && dataColIndex < source.Headers.Count)
-        {
-            // The DataTable is the data source, so its rows match DGV display order (after sort/filter)
-            // We update the DataTable directly - the data is already changed via binding
-            // Now sync back to _processedTable by finding the right position
+        if (dataColIndex < 0 || dataColIndex >= source.ColumnCount ||
+            !TryGetSourceRowIndex(e.RowIndex, out var sourceRowIndex) ||
+            dataColIndex >= source.Rows[sourceRowIndex].Count)
+            return;
 
-            // Get the row from DataTable (which has 序号 at column 0)
-            var dataRow = dt.Rows[e.RowIndex];
-            var originalRowKey = dataRow[0]?.ToString() ?? "";
-
-            // Find matching row in _processedTable by 序号
-            // But since data may be sorted, 序号 is row number, not content
-            // The DataTable column index is e.ColumnIndex, but we already know the value
-
-            // Actually the DataTable is a fresh snapshot copied in RefreshGrid.
-            // The value in _processedTable hasn't been updated yet because it's not bound.
-            // We need to update _processedTable.Rows accordingly.
-
-            // For simplicity: update by DataTable row content
-            // We can match by 序号 value since each row has a unique 序号
-            if (int.TryParse(originalRowKey, out int rowNum))
-            {
-                // rowNum is 1-based from the 序号 column
-                int procRowIndex = rowNum - 1;
-                if (procRowIndex >= 0 && procRowIndex < source.RowCount && dataColIndex >= 0 && dataColIndex < source.Rows[procRowIndex].Count)
-                {
-                    source.Rows[procRowIndex][dataColIndex] = newValue;
-                }
-            }
-
-            // Remove old value push and re-push with correct state
-            // Actually we already pushed, and the value is now written.
-            // The undo stack now has the state before the edit. That's correct.
-        }
+        _operationHistory.Push(source.Clone());
+        source.Rows[sourceRowIndex][dataColIndex] = newValue;
 
         SetStatus($"已更新：第 {e.RowIndex + 1} 行，{source.Headers[dataColIndex]}");
     }
@@ -1268,12 +1269,12 @@ public partial class MainForm : Form
         {
             if (cell.ColumnIndex <= 0)
                 continue; // Skip 序号列
-            if (cell.RowIndex < 0 || cell.RowIndex >= source.RowCount)
+            if (!TryGetSourceRowIndex(cell.RowIndex, out var sourceRowIndex))
                 continue;
             int dataCol = cell.ColumnIndex - 1;
             if (dataCol < 0 || dataCol >= source.ColumnCount)
                 continue;
-            cellsToClear.Add((cell.RowIndex, dataCol));
+            cellsToClear.Add((sourceRowIndex, dataCol));
         }
 
         if (cellsToClear.Count == 0)
@@ -1374,8 +1375,9 @@ public partial class MainForm : Form
         for (int i = 0; i < lines.Length; i++)
         {
             var fields = lines[i].Split('\t');
-            int rowIdx = startRow + i;
-            if (rowIdx >= source.RowCount) break;
+            int displayRowIdx = startRow + i;
+            if (displayRowIdx >= _dgvData.Rows.Count ||
+                !TryGetSourceRowIndex(displayRowIdx, out var rowIdx)) break;
 
             for (int j = 0; j < fields.Length; j++)
             {
@@ -1459,7 +1461,8 @@ public partial class MainForm : Form
             // Fall back: if cells are selected, delete the rows containing them
             if (_dgvData.SelectedCells.Count == 0) return;
             var rowsToDelete = _dgvData.SelectedCells.Cast<DataGridViewCell>()
-                .Select(c => c.RowIndex)
+                .Select(c => TryGetSourceRowIndex(c.RowIndex, out var sourceRowIndex) ? sourceRowIndex : -1)
+                .Where(rowIndex => rowIndex >= 0)
                 .Distinct()
                 .OrderByDescending(r => r)
                 .ToList();
@@ -1481,13 +1484,16 @@ public partial class MainForm : Form
             _operationHistory.Push(source.Clone());
 
             var rowsToDelete = _dgvData.SelectedRows.Cast<DataGridViewRow>()
-                .OrderByDescending(r => r.Index)
+                .Select(row => TryGetSourceRowIndex(row.Index, out var sourceRowIndex) ? sourceRowIndex : -1)
+                .Where(rowIndex => rowIndex >= 0)
+                .Distinct()
+                .OrderByDescending(rowIndex => rowIndex)
                 .ToList();
 
-            foreach (var row in rowsToDelete)
+            foreach (var rowIndex in rowsToDelete)
             {
-                if (row.Index >= 0 && row.Index < source.RowCount)
-                    source.Rows.RemoveAt(row.Index);
+                if (rowIndex < source.RowCount)
+                    source.Rows.RemoveAt(rowIndex);
             }
         }
 
@@ -2002,6 +2008,7 @@ public partial class MainForm : Form
 
         // Get data row indices (DGV row indices)
         var dataRowIndices = _selectedRows
+            .Select(displayRowIndex => TryGetSourceRowIndex(displayRowIndex, out var sourceRowIndex) ? sourceRowIndex : -1)
             .Where(ri => ri >= 0 && ri < source.RowCount)
             .Distinct()
             .OrderBy(ri => ri)
@@ -2077,6 +2084,22 @@ public partial class MainForm : Form
         {
             SetStatus($"已清理空行空列：{cleaned.RowCount} 行 × {cleaned.ColumnCount} 列");
         }
+    }
+
+    private bool TryGetSourceRowIndex(int displayRowIndex, out int sourceRowIndex)
+    {
+        sourceRowIndex = -1;
+        if (displayRowIndex < 0 || displayRowIndex >= _dgvData.Rows.Count)
+            return false;
+
+        if (_dgvData.Rows[displayRowIndex].DataBoundItem is not DataRowView view)
+            return false;
+
+        if (!int.TryParse(view.Row[0]?.ToString(), out var oneBasedRowIndex))
+            return false;
+
+        sourceRowIndex = oneBasedRowIndex - 1;
+        return sourceRowIndex >= 0 && sourceRowIndex < (DisplayTable?.RowCount ?? 0);
     }
 
     #endregion

@@ -199,7 +199,9 @@ public static class ConfigService
             {
                 Profiles = LoadProfiles(),
                 Replacements = LoadReplacements(),
-                ReplacementGroups = LoadReplacementGroups()
+                ReplacementGroups = LoadReplacementGroups(),
+                Templates = LoadTemplates(),
+                TemplateFilters = LoadFilters()
             };
             var json = JsonSerializer.Serialize(pkg, JsonOpts);
 
@@ -241,6 +243,12 @@ public static class ConfigService
                     SaveReplacementGroups(pkg.ReplacementGroups);
                 else if (pkg.Replacements is { Count: > 0 })
                     SaveReplacements(pkg.Replacements);
+
+                // Null means an older package that did not contain template libraries.
+                if (pkg.Templates is not null)
+                    SaveTemplates(pkg.Templates);
+                if (pkg.TemplateFilters is not null)
+                    SaveFilters(pkg.TemplateFilters);
             }
             return pkg;
         }

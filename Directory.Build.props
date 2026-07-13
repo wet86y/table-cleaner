@@ -3,6 +3,10 @@
   <PropertyGroup>
     <BaseOutputPath>$(MSBuildThisFileDirectory)build\bin\</BaseOutputPath>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)build\obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(MSBuildProjectName)' == 'TableCleaner.Core'">$(MSBuildThisFileDirectory)build\bin\TableCleaner.Core\</BaseOutputPath>
+    <BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'TableCleaner.Core'">$(MSBuildThisFileDirectory)build\obj\TableCleaner.Core\</BaseIntermediateOutputPath>
+    <BaseOutputPath Condition="'$(MSBuildProjectName)' == 'TableCleaner.Core.Tests'">$(MSBuildThisFileDirectory)build\bin\TableCleaner.Core.Tests\</BaseOutputPath>
+    <BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'TableCleaner.Core.Tests'">$(MSBuildThisFileDirectory)build\obj\TableCleaner.Core.Tests\</BaseIntermediateOutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
 

@@ -4,6 +4,8 @@
 
 `Directory.Build.props` 将所有编译输出集中到当前仓库根目录 `build`，因此源码目录下不应再出现 `bin` 或 `obj`。构建前必须已初始化 `shared\DesktopUpdateKit` 子模块。
 
+`build\bin\TableCleaner.Core` 与 `build\bin\TableCleaner.Core.Tests` 是内部编译/验证输出，不是可分发产品，也不得复制到 `artifacts`。主程序调试产物路径继续保持为 `build\bin\Release\笨蛋表格.exe`。
+
 | 类型 | 唯一维护目录 | 生成方式 | 用途 |
 |---|---|---|---|
 | 调试运行版 | `build\bin\Release` | `dotnet build .\src\TableCleaner\TableCleaner.csproj -c Release` | 本机功能验证与调试 |

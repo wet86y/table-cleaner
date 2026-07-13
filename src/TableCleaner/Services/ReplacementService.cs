@@ -49,6 +49,7 @@ public static class ReplacementService
     /// <param name="group">替换分组</param>
     public static TableData ApplyGroup(TableData source, ReplacementGroup group)
     {
+        TableDataValidator.EnsureValid(source, "Replacement input");
         var result = CleaningService.Clone(source);
 
         // 1. 从 group 读取作用列
@@ -82,6 +83,7 @@ public static class ReplacementService
             }
         }
 
+        TableDataValidator.EnsureValid(result, "Replacement");
         return result;
     }
 
@@ -189,6 +191,7 @@ public static class ReplacementService
                             : $"扩展{ei + 1}";
                         // 避免列名冲突：已有同名列时追加编号
                         colName = MakeUniqueHeader(data, colName);
+                        insertAt += ei;
                         data.Headers.Insert(insertAt, colName);
                         for (int ri = 0; ri < data.RowCount; ri++)
                         {
@@ -196,6 +199,13 @@ public static class ReplacementService
                                 data.Rows[ri].Insert(insertAt, "");
                         }
                     }
+                }
+
+                // Keep the original target-column identities stable for subsequent rules.
+                for (var index = 0; index < colIndices.Count; index++)
+                {
+                    if (colIndices[index] > ci)
+                        colIndices[index] += exCount;
                 }
 
                 // 第三步：写入替换值和扩展值

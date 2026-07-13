@@ -148,6 +148,7 @@ public static class ExcelService
     {
         try
         {
+            TableDataValidator.EnsureValid(data, "XLSX export input");
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("Sheet1");
 

@@ -40,4 +40,10 @@ public class ConfigPackage
 
     [JsonPropertyName("replacementGroups")]
     public List<ReplacementGroup>? ReplacementGroups { get; set; }
+
+    [JsonPropertyName("templates")]
+    public List<CleanTemplate>? Templates { get; set; }
+
+    [JsonPropertyName("templateFilters")]
+    public List<CleanTemplateFilter>? TemplateFilters { get; set; }
 }

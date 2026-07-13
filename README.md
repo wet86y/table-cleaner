@@ -98,11 +98,13 @@ git submodule update --init --recursive
 ## 项目结构
 
 - `src\TableCleaner`：WinForms 应用源码。
+- `src\TableCleaner.Core`：平台无关的纯处理层，负责解析、映射、合并、替换、筛选和结构校验。
+- `tests\TableCleaner.Core.Tests`：核心结果正确性回归测试。
 - `shared\DesktopUpdateKit`：以 Git submodule 接入的共享更新组件。
 - `scripts`：构建、验证和 Release 资产脚本。
 - `docs`：设计、构建、发布和维护文档。
 
-贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，并运行 `scripts\run-self-check.ps1`。
+贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [结果正确性与 Core 边界](docs/CORRECTNESS_ARCHITECTURE.md)，并运行 `scripts\run-self-check.ps1`。
 
 ## 技术栈
 
