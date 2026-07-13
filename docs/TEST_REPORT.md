@@ -1,5 +1,12 @@
 # TEST_REPORT
 
+## 2026-07-13 v1.1.2 在线更新链验证版
+
+- 目标：从 v1.1.1 通过公开 latest 更新通道升级到 v1.1.2，验证修复后的完整更新链。
+- 构建与资产必须通过共享 `DesktopUpdateKit` 的 `--verify-release` 和 `--verify-ui-layout` 双重最终 EXE 自检。
+- Core 回归测试 `16/16`，Release 编译 0 警告、0 错误；构建后与制包前的最终 EXE 双自检均通过。
+- 发布资产 FileVersion `1.1.2.0`，SHA-256 `33e06b3b92d5f13cf07fa7ee950e87a57d2b805a63c03aea346203d8e3bf3ec1`。
+
 ## 2026-07-13 v1.1.1 更新热修复
 
 - 复现并确认 v1.1.0 正式 EXE 缺少 `DesktopUpdateKit.Resources.UpdaterStub.exe`，失败原因是增量发布复用了此前普通 Release 构建生成的不含 Stub 程序集。
