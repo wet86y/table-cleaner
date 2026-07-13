@@ -8,6 +8,10 @@
 
 **笨蛋表格**是一款面向 Windows 的表格模板化处理工具。哪怕是笨蛋，也能迅速完成重复性的表格编辑任务。
 
+本项目代码0%人工编写，纯ai构筑。
+
+运行环境：一个坚固标中键（Windows 10/11 64位，无其他依赖）
+
 **[下载最新版本](https://github.com/wet86y/table-cleaner/releases/latest)** · **[提交问题或建议](https://github.com/wet86y/table-cleaner/issues)**
 
 ## 它能解决什么问题？
