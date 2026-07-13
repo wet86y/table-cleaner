@@ -34,7 +34,6 @@ public sealed class AboutForm : Form
     private readonly ProgressBar _prgDownload;
     private readonly GroupBox _grpReleaseNotes;
     private readonly TextBox _txtReleaseNotes;
-    private readonly int _updateSectionTop;
 
     public AboutForm()
     {
@@ -107,7 +106,6 @@ public sealed class AboutForm : Form
             System.Diagnostics.Process.Start(psi);
         };
         y = _lnkGitHub.Bottom + pad;
-        _updateSectionTop = y;
 
         // --- Update section ---
         // Check update button
@@ -126,7 +124,9 @@ public sealed class AboutForm : Form
         {
             Text = "点击\"检查更新\"获取最新版本。",
             Location = new Point(pad, y),
-            AutoSize = true,
+            AutoSize = false,
+            Size = new Size(w, 22),
+            TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = SystemColors.GrayText,
             MaximumSize = new Size(w, 0)
         };
@@ -181,17 +181,19 @@ public sealed class AboutForm : Form
             Text = "更新说明",
             Location = new Point(pad, y),
             Size = new Size(w, 160),
+            Padding = new Padding(8),
             Visible = false
         };
         _txtReleaseNotes = new TextBox
         {
-            Location = new Point(8, 20),
-            Size = new Size(w - 24, 132),
+            Dock = DockStyle.Fill,
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.None,
-            BackColor = SystemColors.Control
+            BackColor = SystemColors.Control,
+            TabStop = false,
+            HideSelection = true
         };
         _grpReleaseNotes.Controls.Add(_txtReleaseNotes);
 
@@ -211,6 +213,52 @@ public sealed class AboutForm : Form
             SharedUpdateSession.PauseWhenUiCloses();
         };
     }
+
+    internal static bool VerifyUpdateLayouts()
+    {
+        using var form = new AboutForm
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000),
+            Opacity = 0
+        };
+        form.Show();
+
+        form._lblStatus.Text = "Downloading 17 MB/71.3 MB at 3.4 MB/s using four parallel connections through an accelerated node.";
+        form._btnCheckUpdate.Visible = false;
+        form._prgDownload.Visible = true;
+        form.HideAllActionButtons();
+        form._btnPauseResume.Visible = true;
+        form._btnSwitchNode.Visible = true;
+        form._btnBackground.Visible = true;
+        form._btnCancel.Visible = true;
+        form._grpReleaseNotes.Visible = true;
+        form.LayoutUpdateControls();
+        var downloadingIsValid = IsAbove(form._lblStatus, form._prgDownload)
+            && IsAbove(form._prgDownload, form._btnPauseResume)
+            && IsAbove(form._btnPauseResume, form._btnBackground)
+            && IsAbove(form._btnBackground, form._grpReleaseNotes)
+            && form.ClientRectangle.Contains(form._grpReleaseNotes.Bounds);
+
+        form._lblStatus.Text = "The update was downloaded and verified. Click install to replace the current executable.";
+        form._btnCheckUpdate.Visible = true;
+        form._prgDownload.Visible = true;
+        form.HideAllActionButtons();
+        form._btnInstall.Visible = true;
+        form._grpReleaseNotes.Visible = true;
+        form.LayoutUpdateControls();
+        var completedIsValid = IsAbove(form._btnCheckUpdate, form._prgDownload)
+            && IsAbove(form._lblStatus, form._prgDownload)
+            && IsAbove(form._prgDownload, form._btnInstall)
+            && IsAbove(form._btnInstall, form._grpReleaseNotes)
+            && form.ClientRectangle.Contains(form._grpReleaseNotes.Bounds);
+
+        form.Close();
+        return downloadingIsValid && completedIsValid;
+    }
+
+    private static bool IsAbove(Control upper, Control lower) => upper.Bottom <= lower.Top;
 
     private static Button CreateActionButton(string text, int x, ref int y, bool visible = true)
     {
@@ -521,20 +569,25 @@ public sealed class AboutForm : Form
 
     private void LayoutUpdateControls()
     {
-        const int pad = 12;
-        const int contentWidth = 480;
-        const int gap = 8;
-        var y = _updateSectionTop;
+        SuspendLayout();
+
+        var pad = LogicalToDeviceUnits(12);
+        var gap = LogicalToDeviceUnits(8);
+        var rowGap = LogicalToDeviceUnits(6);
+        var targetClientWidth = LogicalToDeviceUnits(504);
+        var contentWidth = targetClientWidth - (pad * 2);
+        var y = _lnkGitHub.Bottom + pad;
         var statusPlaced = false;
 
         if (_btnCheckUpdate.Visible)
         {
             _btnCheckUpdate.Location = new Point(pad, y);
-            var statusWidth = contentWidth - _btnCheckUpdate.Width - 12;
-            _lblStatus.MaximumSize = new Size(statusWidth, 0);
-            var statusHeight = _lblStatus.PreferredHeight;
+            var statusGap = LogicalToDeviceUnits(12);
+            var statusWidth = Math.Max(LogicalToDeviceUnits(80), contentWidth - _btnCheckUpdate.Width - statusGap);
+            var statusHeight = MeasureStatusHeight(statusWidth);
+            _lblStatus.Size = new Size(statusWidth, statusHeight);
             _lblStatus.Location = new Point(
-                _btnCheckUpdate.Right + 12,
+                _btnCheckUpdate.Right + statusGap,
                 y + Math.Max(0, (_btnCheckUpdate.Height - statusHeight) / 2));
             y = Math.Max(_btnCheckUpdate.Bottom, _lblStatus.Bottom) + gap;
             statusPlaced = true;
@@ -543,8 +596,8 @@ public sealed class AboutForm : Form
         if (!statusPlaced)
         {
             _lblStatus.Location = new Point(pad, y);
-            _lblStatus.MaximumSize = new Size(contentWidth, 0);
-            y += Math.Max(_lblStatus.PreferredHeight, 20) + gap;
+            _lblStatus.Size = new Size(contentWidth, MeasureStatusHeight(contentWidth));
+            y = _lblStatus.Bottom + gap;
         }
 
         if (_prgDownload.Visible)
@@ -564,9 +617,11 @@ public sealed class AboutForm : Form
             _btnPauseResume.Location = new Point(pad, y);
             if (_btnSwitchNode.Visible)
             {
-                _btnSwitchNode.Location = new Point(_btnPauseResume.Right + 6, y + 2);
+                _btnSwitchNode.Location = new Point(
+                    _btnPauseResume.Right + rowGap,
+                    y + LogicalToDeviceUnits(2));
             }
-            y = Math.Max(_btnPauseResume.Bottom, _btnSwitchNode.Visible ? _btnSwitchNode.Bottom : 0) + 6;
+            y = Math.Max(_btnPauseResume.Bottom, _btnSwitchNode.Visible ? _btnSwitchNode.Bottom : 0) + rowGap;
         }
 
         if (_btnBackground.Visible || _btnCancel.Visible)
@@ -577,7 +632,7 @@ public sealed class AboutForm : Form
             }
             if (_btnCancel.Visible)
             {
-                _btnCancel.Location = new Point(_btnBackground.Visible ? _btnBackground.Right + 6 : pad, y);
+                _btnCancel.Location = new Point(_btnBackground.Visible ? _btnBackground.Right + rowGap : pad, y);
             }
             y = Math.Max(_btnBackground.Visible ? _btnBackground.Bottom : 0, _btnCancel.Visible ? _btnCancel.Bottom : 0) + gap;
         }
@@ -591,11 +646,22 @@ public sealed class AboutForm : Form
         if (_grpReleaseNotes.Visible)
         {
             _grpReleaseNotes.Location = new Point(pad, y);
-            _grpReleaseNotes.Size = new Size(contentWidth, 160);
+            _grpReleaseNotes.Size = new Size(contentWidth, LogicalToDeviceUnits(160));
             y = _grpReleaseNotes.Bottom + pad;
         }
 
-        ClientSize = new Size(504, Math.Max(250, y));
+        ClientSize = new Size(targetClientWidth, Math.Max(LogicalToDeviceUnits(250), y));
+        ResumeLayout(performLayout: true);
+    }
+
+    private int MeasureStatusHeight(int width)
+    {
+        var measured = TextRenderer.MeasureText(
+            _lblStatus.Text,
+            _lblStatus.Font,
+            new Size(width, int.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.NoPadding);
+        return Math.Max(LogicalToDeviceUnits(20), measured.Height);
     }
 
     private void ShowReleaseNotes(UpdateRelease release)
@@ -610,6 +676,7 @@ public sealed class AboutForm : Form
         }
 
         _txtReleaseNotes.Text = notes;
+        _txtReleaseNotes.Select(0, 0);
         _grpReleaseNotes.Visible = true;
         LayoutUpdateControls();
     }

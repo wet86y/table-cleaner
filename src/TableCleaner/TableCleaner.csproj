@@ -41,6 +41,12 @@
            Text="DesktopUpdateKit submodule is missing. Run: git submodule update --init --recursive" />
   </Target>
 
+  <Target Name="EnsureUpdaterStubInput" BeforeTargets="CoreCompile"
+          Condition="'$(UpdaterStubPath)' != ''">
+    <Error Condition="!Exists('$(UpdaterStubPath)')"
+           Text="UpdaterStubPath does not exist: $(UpdaterStubPath)" />
+  </Target>
+
   <!-- Copy config/exports to output -->
   <ItemGroup>
     <None Update="config\**" CopyToOutputDirectory="PreserveNewest" />

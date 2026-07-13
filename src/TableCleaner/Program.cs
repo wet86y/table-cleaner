@@ -1,5 +1,6 @@
 using System.Text;
 using System.Threading;
+using System.Reflection;
 using DesktopUpdateKit;
 using TableCleaner.Forms;
 using TableCleaner.Services;
@@ -9,27 +10,59 @@ namespace TableCleaner;
 static class Program
 {
     private const string SingleInstanceMutexName = @"Local\StupidTable.SingleInstance";
+    private const string VerifyReleaseArgument = "--verify-release";
+    private const string VerifyUiLayoutArgument = "--verify-ui-layout";
+    private const string UpdaterStubResourceName = "DesktopUpdateKit.Resources.UpdaterStub.exe";
 
     [STAThread]
-    static void Main(string[] args)
+    static int Main(string[] args)
     {
-        using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var isFirstInstance);
-        if (!isFirstInstance)
+        if (args.Any(arg => string.Equals(arg, VerifyReleaseArgument, StringComparison.OrdinalIgnoreCase)))
         {
-            return;
+            return VerifyReleaseBundle();
         }
 
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         ApplicationConfiguration.Initialize();
+        if (args.Any(arg => string.Equals(arg, VerifyUiLayoutArgument, StringComparison.OrdinalIgnoreCase)))
+        {
+            return AboutForm.VerifyUpdateLayouts() ? 0 : 20;
+        }
+
+        using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var isFirstInstance);
+        if (!isFirstInstance)
+        {
+            return 0;
+        }
 
         if (TryNormalizeExecutableName())
         {
-            return;
+            return 0;
         }
 
         ConfigService.EnsureDirs();
         TryWriteUpdateHealthMarker(args);
         Application.Run(new MainForm());
+        return 0;
+    }
+
+    private static int VerifyReleaseBundle()
+    {
+        try
+        {
+            var assembly = Assembly.GetEntryAssembly();
+            using var resource = assembly?.GetManifestResourceStream(UpdaterStubResourceName);
+            if (resource is null || resource.Length < 2)
+            {
+                return 10;
+            }
+
+            return resource.ReadByte() == 'M' && resource.ReadByte() == 'Z' ? 0 : 11;
+        }
+        catch
+        {
+            return 12;
+        }
     }
 
     private static bool TryNormalizeExecutableName()

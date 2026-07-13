@@ -13,6 +13,7 @@ if (-not (Test-Path -LiteralPath $SharedScriptPath)) {
 $SharedScript = (Resolve-Path -LiteralPath $SharedScriptPath).Path
 $ConfigPath = Join-Path $ProjectRoot "release.config.json"
 
+& (Join-Path $PSScriptRoot "test-release-executable.ps1")
 & $SharedScript -ProjectRoot $ProjectRoot -ConfigPath $ConfigPath -Version $Version -ReleaseNotes $ReleaseNotes
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
