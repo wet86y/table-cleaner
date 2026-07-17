@@ -43,7 +43,11 @@ static class Program
         ConfigService.EnsureDirs();
         TryWriteUpdateHealthMarker(args);
         Application.Run(new MainForm());
-        return 0;
+        return AboutForm.ShutdownUpdateSessionAsync(TimeSpan.FromSeconds(30))
+            .GetAwaiter()
+            .GetResult()
+            ? 0
+            : 30;
     }
 
     private static int VerifyReleaseBundle()

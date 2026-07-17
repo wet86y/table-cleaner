@@ -9,7 +9,8 @@ public sealed class AboutForm : Form
         Repository: "wet86y/table-cleaner",
         ExeAssetName: "table-cleaner.exe",
         Sha256AssetName: "table-cleaner.exe.sha256",
-        TempDirectoryName: "StupidTable-update");
+        TempDirectoryName: "StupidTable-update",
+        CurrentVersion: Version.Parse(AppVisuals.DisplayVersion));
 
     private static readonly UpdateClient SharedUpdateClient = new(UpdateOptions);
     private static readonly UpdateDownloadSession SharedUpdateSession = new(SharedUpdateClient);
@@ -258,6 +259,13 @@ public sealed class AboutForm : Form
         return downloadingIsValid && completedIsValid;
     }
 
+    internal static async Task<bool> ShutdownUpdateSessionAsync(TimeSpan timeout)
+    {
+        var stopped = await SharedUpdateSession.StopAsync(timeout).ConfigureAwait(false);
+        SharedUpdateSession.Dispose();
+        return stopped;
+    }
+
     private static bool IsAbove(Control upper, Control lower) => upper.Bottom <= lower.Top;
 
     private static Button CreateActionButton(string text, int x, ref int y, bool visible = true)
@@ -345,13 +353,15 @@ public sealed class AboutForm : Form
     private async void InstallUpdate_Click(object? sender, EventArgs e)
     {
         var session = SharedUpdateSession.Snapshot;
-        if (session.State == UpdateDownloadSessionState.Completed && !string.IsNullOrWhiteSpace(session.DownloadedPath))
+        if (session.State == UpdateDownloadSessionState.Completed
+            && !string.IsNullOrWhiteSpace(session.DownloadedPath)
+            && session.Release is not null)
         {
             _btnInstall.Enabled = false;
             _lblStatus.Text = "校验完成，正在启动更新助手...";
             try
             {
-                await _updateLauncher.LaunchAsync(session.DownloadedPath);
+                await _updateLauncher.LaunchAsync(session.DownloadedPath, session.Release.ExpectedSha256);
                 _lblStatus.Text = "更新助手已启动，程序即将退出。";
                 Application.Exit();
             }
