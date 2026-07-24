@@ -21,10 +21,10 @@ public static class TemplateEngine
 
         foreach (var item in enabledItems)
         {
-            int colIndex = table.GetColIndex(item.Field);
+            int colIndex = table.ResolveColumnIndex(item.Column);
             if (colIndex < 0)
             {
-                logger?.Invoke($"[MatchFilter] 列 '{item.Field}' 不存在 → 不匹配");
+                logger?.Invoke($"[MatchFilter] 列 '{item.Column}' 不存在 → 不匹配");
                 return false;
             }
 
@@ -38,11 +38,11 @@ public static class TemplateEngine
             bool matched = string.Equals(cellValue.Trim(), item.Value.Trim(), StringComparison.OrdinalIgnoreCase);
             if (!matched)
             {
-                logger?.Invoke($"[MatchFilter] 列 '{item.Field}' 值 '{cellValue}' 不匹配等值 '{item.Value}'");
+                logger?.Invoke($"[MatchFilter] 列 '{item.Column}' 值 '{cellValue}' 不匹配等值 '{item.Value}'");
                 return false;
             }
 
-            logger?.Invoke($"[MatchFilter] 列 '{item.Field}' 值 '{cellValue}' 匹配等值 '{item.Value}'");
+            logger?.Invoke($"[MatchFilter] 列 '{item.Column}' 值 '{cellValue}' 匹配等值 '{item.Value}'");
         }
 
         logger?.Invoke("[MatchFilter] 所有条件匹配通过");
@@ -65,10 +65,10 @@ public static class TemplateEngine
             return new TableData();
         }
 
-        var mappedRows = MapRows(table.Headers, table.Rows, template.TargetHeaders, template.HeaderMatchMode, logger);
+        var mappedRows = MapRows(table, table.Rows, template.TargetHeaders, template.HeaderMatchMode, logger);
         var result = new TableData
         {
-            Headers = template.TargetHeaders.Select(th => th.Header).ToList(),
+            Columns = TableData.CreateColumns(template.TargetHeaders.Select(th => th.Header)),
             Rows = mappedRows
         };
 
@@ -108,7 +108,7 @@ public static class TemplateEngine
     private static TableData ApplyLegacyFilterTemplate(TableData table, CleanTemplate template, CleanTemplateFilter? filter, Action<string>? logger)
     {
         var items = filter?.MatchItems
-            .Where(i => !string.IsNullOrWhiteSpace(i.Field) && !string.IsNullOrWhiteSpace(i.Value))
+            .Where(i => !string.IsNullOrWhiteSpace(i.Column.Header) && !string.IsNullOrWhiteSpace(i.Value))
             .ToList() ?? new List<FilterMatchItem>();
 
         if (items.Count == 0)
@@ -116,17 +116,17 @@ public static class TemplateEngine
 
         var conditionColumns = items.Select(i => new TemplateColumn
         {
-            Header = i.Field,
-            SourceHeader = i.Field,
+            Header = i.Column.Header,
+            SourceColumn = i.Column,
             MatchValue = i.Value
         }).ToList();
 
         var filteredRows = FilterRowsByConditions(table, conditionColumns, template.HeaderMatchMode, logger);
-        var mappedRows = MapRows(table.Headers, filteredRows, template.TargetHeaders, template.HeaderMatchMode, logger);
+        var mappedRows = MapRows(table, filteredRows, template.TargetHeaders, template.HeaderMatchMode, logger);
 
         var result = new TableData
         {
-            Headers = template.TargetHeaders.Select(th => th.Header).ToList(),
+            Columns = TableData.CreateColumns(template.TargetHeaders.Select(th => th.Header)),
             Rows = mappedRows
         };
         logger?.Invoke($"[ApplyFilterTemplate] 旧版筛选后保留 {result.RowCount}/{table.RowCount} 行");
@@ -136,11 +136,11 @@ public static class TemplateEngine
     private static TableData ApplySingleFilterTemplate(TableData table, CleanTemplate template, TemplateColumn conditionColumn, Action<string>? logger)
     {
         var filteredRows = FilterRowsByConditions(table, new[] { conditionColumn }, template.HeaderMatchMode, logger);
-        var mappedRows = MapRows(table.Headers, filteredRows, template.TargetHeaders, template.HeaderMatchMode, logger);
+        var mappedRows = MapRows(table, filteredRows, template.TargetHeaders, template.HeaderMatchMode, logger);
 
         var result = new TableData
         {
-            Headers = template.TargetHeaders.Select(th => th.Header).ToList(),
+            Columns = TableData.CreateColumns(template.TargetHeaders.Select(th => th.Header)),
             Rows = mappedRows
         };
         logger?.Invoke($"[ApplyFilterTemplate] 单组筛选后保留 {result.RowCount}/{table.RowCount} 行");
@@ -160,14 +160,14 @@ public static class TemplateEngine
                 ? table.Rows.Select(r => r.ToList()).ToList()
                 : FilterRowsByConditions(table, conditions, template.HeaderMatchMode, logger);
 
-            var mappedRows = MapRows(table.Headers, filteredRows, group.Columns, template.HeaderMatchMode, logger);
+            var mappedRows = MapRows(table, filteredRows, group.Columns, template.HeaderMatchMode, logger);
             mappedGroups.Add(mappedRows);
             maxRows = Math.Max(maxRows, mappedRows.Count);
         }
 
         var result = new TableData
         {
-            Headers = template.TargetHeaders.Select(th => th.Header).ToList()
+            Columns = TableData.CreateColumns(template.TargetHeaders.Select(th => th.Header))
         };
 
         for (int r = 0; r < maxRows; r++)
@@ -225,7 +225,7 @@ public static class TemplateEngine
         {
             if (string.IsNullOrWhiteSpace(col.MatchValue)) continue;
 
-            var indexes = FindSourceColumnIndexes(table.Headers, col.Header, col.SourceHeader, col.BackupSource1, col.BackupSource2, matchMode);
+            var indexes = FindSourceColumnIndexes(table, col, matchMode);
             if (indexes.Count == 0)
             {
                 logger?.Invoke($"[FilterRowsByConditions] 筛选列未找到：{col.Header}");
@@ -262,7 +262,12 @@ public static class TemplateEngine
         return rows;
     }
 
-    private static List<List<string>> MapRows(List<string> sourceHeaders, List<List<string>> sourceRows, IReadOnlyList<TemplateColumn> columns, HeaderMatchMode matchMode, Action<string>? logger)
+    private static List<List<string>> MapRows(
+        TableData source,
+        List<List<string>> sourceRows,
+        IReadOnlyList<TemplateColumn> columns,
+        HeaderMatchMode matchMode,
+        Action<string>? logger)
     {
         var mapped = new List<List<string>>();
         foreach (var row in sourceRows)
@@ -270,7 +275,7 @@ public static class TemplateEngine
             var outRow = new List<string>();
             foreach (var col in columns)
             {
-                var value = FindSourceColumnValue(row, sourceHeaders, col.Header, col.SourceHeader, col.BackupSource1, col.BackupSource2, logger, matchMode);
+                var value = FindSourceColumnValue(row, source, col, logger, matchMode);
                 outRow.Add(value ?? col.Fallback ?? "");
             }
             mapped.Add(outRow);
@@ -289,7 +294,7 @@ public static class TemplateEngine
 
         foreach (var col in template.TargetHeaders)
         {
-            var indexes = FindSourceColumnIndexes(table.Headers, col.Header, col.SourceHeader, col.BackupSource1, col.BackupSource2, template.HeaderMatchMode);
+            var indexes = FindSourceColumnIndexes(table, col, template.HeaderMatchMode);
             if (indexes.Count <= 1) continue;
 
             var label = string.IsNullOrWhiteSpace(col.Header) ? "（空表头）" : col.Header.Trim();
@@ -300,56 +305,64 @@ public static class TemplateEngine
         return warnings;
     }
 
-    private static List<int> FindSourceColumnIndexes(List<string> headers, string header, string? legacySourceHeader, string? backup1, string? backup2, HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
+    private static List<int> FindSourceColumnIndexes(
+        TableData table,
+        TemplateColumn templateColumn,
+        HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
     {
-        foreach (var candidate in EnumerateSourceCandidates(header, legacySourceHeader, backup1, backup2))
+        foreach (var candidate in EnumerateSourceCandidates(templateColumn))
         {
-            var indexes = FindMatchingColumnIndexes(headers, candidate, matchMode);
+            var indexes = FindMatchingColumnIndexes(table, candidate, matchMode);
             if (indexes.Count > 0) return indexes;
         }
 
         return new List<int>();
     }
 
-    private static IEnumerable<string?> EnumerateSourceCandidates(string header, string? legacySourceHeader, string? backup1, string? backup2)
+    private static IEnumerable<ColumnReference> EnumerateSourceCandidates(TemplateColumn column)
     {
-        yield return header;
-
-        if (!string.IsNullOrWhiteSpace(legacySourceHeader) &&
-            !string.Equals(legacySourceHeader.Trim(), header.Trim(), StringComparison.OrdinalIgnoreCase))
-            yield return legacySourceHeader;
-
-        yield return backup1;
-        yield return backup2;
+        if (!string.IsNullOrWhiteSpace(column.SourceColumn.Header))
+            yield return column.SourceColumn;
+        foreach (var backup in column.BackupSources.Where(item => !string.IsNullOrWhiteSpace(item.Header)))
+            yield return backup;
     }
 
-    private static List<int> FindMatchingColumnIndexes(List<string> headers, string? searchHeader, HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
+    private static List<int> FindMatchingColumnIndexes(
+        TableData table,
+        ColumnReference reference,
+        HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
     {
-        if (string.IsNullOrWhiteSpace(searchHeader))
+        if (string.IsNullOrWhiteSpace(reference.Header) || reference.Occurrence < 1)
             return new List<int>();
 
-        var search = searchHeader.Trim();
-        var exact = headers
-            .Select((Header, Index) => new { Header, Index })
-            .Where(x => string.Equals(x.Header, search, StringComparison.OrdinalIgnoreCase))
+        var exact = table.ResolveColumnIndex(reference);
+        if (exact >= 0)
+            return new List<int> { exact };
+
+        if (matchMode == HeaderMatchMode.Exact)
+            return new List<int>();
+
+        var search = reference.Header.Trim();
+        var fuzzyMatches = table.Columns
+            .Select((Column, Index) => new { Column, Index })
+            .Where(x => x.Column.Header.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        search.IndexOf(x.Column.Header, StringComparison.OrdinalIgnoreCase) >= 0)
             .Select(x => x.Index)
             .ToList();
-
-        if (exact.Count > 0 || matchMode == HeaderMatchMode.Exact)
-            return exact;
-
-        return headers
-            .Select((Header, Index) => new { Header, Index })
-            .Where(x => x.Header.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        search.IndexOf(x.Header, StringComparison.OrdinalIgnoreCase) >= 0)
-            .Select(x => x.Index)
-            .ToList();
+        return reference.Occurrence <= fuzzyMatches.Count
+            ? new List<int> { fuzzyMatches[reference.Occurrence - 1] }
+            : new List<int>();
     }
 
-    /// <summary>从源数据行中按三行优先级查找并取值；若命中多个同名源列，则从左到右取第一个非空值。</summary>
-    private static string? FindSourceColumnValue(List<string> row, List<string> headers, string header, string? legacySourceHeader, string? backup1, string? backup2, Action<string>? logger = null, HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
+    /// <summary>按首要列及备用列顺序查找并取值。</summary>
+    private static string? FindSourceColumnValue(
+        List<string> row,
+        TableData source,
+        TemplateColumn column,
+        Action<string>? logger = null,
+        HeaderMatchMode matchMode = HeaderMatchMode.Fuzzy)
     {
-        var indexes = FindSourceColumnIndexes(headers, header, legacySourceHeader, backup1, backup2, matchMode);
+        var indexes = FindSourceColumnIndexes(source, column, matchMode);
         if (indexes.Count == 0) return null;
 
         foreach (var idx in indexes)

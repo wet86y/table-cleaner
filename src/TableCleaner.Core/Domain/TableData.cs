@@ -3,10 +3,10 @@ namespace TableCleaner.Models;
 /// <summary>行列结构化数据，程序内部统一使用此模型</summary>
 public class TableData
 {
-    public List<string> Headers { get; set; } = new();
+    public List<TableColumn> Columns { get; set; } = new();
     public List<List<string>> Rows { get; set; } = new();
 
-    public int ColumnCount => Headers.Count;
+    public int ColumnCount => Columns.Count;
     public int RowCount => Rows.Count;
 
     public string? this[int row, int col]
@@ -19,14 +19,73 @@ public class TableData
         }
     }
 
-    public int GetColIndex(string columnName) =>
-        Headers.FindIndex(h => string.Equals(h, columnName, StringComparison.OrdinalIgnoreCase));
+    public int GetColumnIndexById(string columnId) =>
+        Columns.FindIndex(column => string.Equals(column.Id, columnId, StringComparison.Ordinal));
+
+    public int ResolveColumnIndex(ColumnReference? reference)
+    {
+        if (reference is null || reference.Occurrence < 1)
+            return -1;
+
+        var occurrence = 0;
+        for (var index = 0; index < Columns.Count; index++)
+        {
+            if (!string.Equals(Columns[index].Header, reference.Header, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            occurrence++;
+            if (occurrence == reference.Occurrence)
+                return index;
+        }
+
+        return -1;
+    }
+
+    public List<int> ResolveColumnIndexes(IEnumerable<ColumnReference>? references) =>
+        references?
+            .Select(ResolveColumnIndex)
+            .Where(index => index >= 0)
+            .Distinct()
+            .ToList()
+        ?? new List<int>();
+
+    public ColumnReference GetColumnReference(int index)
+    {
+        if (index < 0 || index >= Columns.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+
+        var header = Columns[index].Header;
+        var occurrence = Columns
+            .Take(index + 1)
+            .Count(column => string.Equals(column.Header, header, StringComparison.OrdinalIgnoreCase));
+
+        return new ColumnReference { Header = header, Occurrence = occurrence };
+    }
+
+    public string GetColumnDisplayName(int index)
+    {
+        if (index < 0 || index >= Columns.Count)
+            return "";
+
+        var header = Columns[index].Header;
+        var duplicateCount = Columns.Count(column =>
+            string.Equals(column.Header, header, StringComparison.OrdinalIgnoreCase));
+
+        if (duplicateCount <= 1)
+            return header;
+
+        var reference = GetColumnReference(index);
+        return $"{header}（第{reference.Occurrence}个同名列）";
+    }
+
+    public static List<TableColumn> CreateColumns(IEnumerable<string?> headers) =>
+        headers.Select(TableColumn.Create).ToList();
 
     public TableData Clone()
     {
         return new TableData
         {
-            Headers = new List<string>(Headers),
+            Columns = Columns.Select(column => column.Clone()).ToList(),
             Rows = Rows.Select(r => new List<string>(r)).ToList()
         };
     }

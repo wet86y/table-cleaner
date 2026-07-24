@@ -48,21 +48,17 @@ public class TemplateColumn
     [JsonPropertyName("header")]
     public string Header { get; set; } = "";
 
-    /// <summary>源数据中主要的列名（首要匹配表头）</summary>
-    [JsonPropertyName("sourceHeader")]
-    public string SourceHeader { get; set; } = "";
+    /// <summary>源数据中的首要列引用。</summary>
+    [JsonPropertyName("sourceColumn")]
+    public ColumnReference SourceColumn { get; set; } = new();
 
     /// <summary>当源列不存在时使用的默认值</summary>
     [JsonPropertyName("fallback")]
     public string? Fallback { get; set; }
 
-    /// <summary>备用匹配表头 1（第二优先级匹配，可为空）</summary>
-    [JsonPropertyName("backupSource1")]
-    public string BackupSource1 { get; set; } = "";
-
-    /// <summary>备用匹配表头 2（第三优先级匹配，可为空）</summary>
-    [JsonPropertyName("backupSource2")]
-    public string BackupSource2 { get; set; } = "";
+    /// <summary>备用源列引用，按顺序尝试。</summary>
+    [JsonPropertyName("backupSources")]
+    public List<ColumnReference> BackupSources { get; set; } = new();
 
     /// <summary>
     /// 筛选匹配值（仅筛选模板使用）。
@@ -75,9 +71,9 @@ public class TemplateColumn
 /// <summary>筛选模板的匹配规则（等值匹配）</summary>
 public class FilterMatchItem
 {
-    /// <summary>源数据列名</summary>
-    [JsonPropertyName("field")]
-    public string Field { get; set; } = "";
+    /// <summary>源数据列</summary>
+    [JsonPropertyName("column")]
+    public ColumnReference Column { get; set; } = new();
 
     /// <summary>匹配值（等值匹配）</summary>
     [JsonPropertyName("value")]

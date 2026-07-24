@@ -13,9 +13,9 @@ public class ReplacementGroup
 
     /// <summary>分组级作用列列表。null 或空 = 全表；非空 = 仅这些列</summary>
     [JsonPropertyName("scopeColumns")]
-    public List<string>? ScopeColumns { get; set; }
+    public List<ColumnReference>? ScopeColumns { get; set; }
 
-    /// <summary>匹配模式：精确/模糊；默认 Fuzzy 以兼容旧配置</summary>
+    /// <summary>匹配模式：精确/模糊</summary>
     [JsonPropertyName("matchMode")]
     public ReplacementMatchMode MatchMode { get; set; } = ReplacementMatchMode.Fuzzy;
 

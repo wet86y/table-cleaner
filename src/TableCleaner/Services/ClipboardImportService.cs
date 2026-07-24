@@ -11,6 +11,11 @@ public static class ClipboardImportService
         if (!Clipboard.ContainsText()) return null;
 
         var text = Clipboard.GetText();
+        return ImportText(text);
+    }
+
+    public static TableData? ImportText(string text)
+    {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
         var records = ParseRecords(text);

@@ -206,7 +206,7 @@ public static class SelectionMergeService
 
         foreach (int ci in colsToRemove)
         {
-            result.Headers.RemoveAt(ci);
+            result.Columns.RemoveAt(ci);
             foreach (var row in result.Rows)
             {
                 if (ci < row.Count)

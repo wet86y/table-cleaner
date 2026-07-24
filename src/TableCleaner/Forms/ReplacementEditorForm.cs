@@ -28,7 +28,7 @@ public class ReplacementEditorForm : Form
     // Scope columns — button + label
     private readonly Label _lblScopeSummary;
     private readonly Button _btnSelectScopeColumns;
-    private List<string>? _savedScopeColumns;
+    private List<ColumnReference>? _savedScopeColumns;
 
     // Match mode radio buttons
     private readonly RadioButton _rbMatchFuzzy;
@@ -45,16 +45,16 @@ public class ReplacementEditorForm : Form
     private readonly RadioButton _rbWriteInsert;
 
     private List<ReplacementGroup> _groups;
-    private readonly List<string>? _allColumns;
+    private readonly TableData? _table;
     private int _currentGroupIndex = -1;
 
     /// <summary>用户点击"应用替换"时触发；MainForm 订阅此事件以执行替换。</summary>
     public event EventHandler? ReplacementsApplied;
 
-    public ReplacementEditorForm(List<string>? allColumns = null)
+    public ReplacementEditorForm(TableData? table = null)
     {
         Icon = AppVisuals.WindowIcon;
-        _allColumns = allColumns;
+        _table = table;
         _groups = ConfigService.LoadReplacementGroups();
 
         Text = "替换库管理";
@@ -112,7 +112,7 @@ public class ReplacementEditorForm : Form
         // ═══ Row 3: scope + match + type ═══
         var lblScopeLabel = new Label { Text = "作用列：", TextAlign = ContentAlignment.MiddleLeft, AutoSize = true };
         _lblScopeSummary = new Label { AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, ForeColor = SystemColors.HotTrack, Text = "[全表]" };
-        _btnSelectScopeColumns = new Button { Text = "选择作用列...", Enabled = _allColumns != null };
+        _btnSelectScopeColumns = new Button { Text = "选择作用列...", Enabled = _table != null };
         _btnSelectScopeColumns.Click += BtnSelectScopeColumns_Click;
 
         var lblMatch = new Label { Text = "匹配：", TextAlign = ContentAlignment.MiddleLeft, AutoSize = true };
@@ -245,7 +245,7 @@ public class ReplacementEditorForm : Form
     public string? AppliedGroupName { get; private set; }
 
     /// <summary>作用列，从当前分组返回 group.ScopeColumns</summary>
-    public List<string>? SelectedScopeColumns
+    public List<ColumnReference>? SelectedScopeColumns
     {
         get
         {
@@ -362,7 +362,7 @@ public class ReplacementEditorForm : Form
 
     private void UpdateScopeSummaryLabel()
     {
-        if (_allColumns == null)
+        if (_table == null)
         {
             _lblScopeSummary.Text = "[全表]";
             return;
@@ -384,9 +384,9 @@ public class ReplacementEditorForm : Form
 
     private void BtnSelectScopeColumns_Click(object? sender, EventArgs e)
     {
-        if (_allColumns == null) return;
+        if (_table == null) return;
 
-        using var dialog = new ScopeColumnDialog(_allColumns, _savedScopeColumns);
+        using var dialog = new ScopeColumnDialog(_table, _savedScopeColumns);
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             _savedScopeColumns = dialog.SelectedColumns;
@@ -694,7 +694,7 @@ public class ReplacementEditorForm : Form
             int beforeCol = -1, afterCol = -1;
             for (int i = 0; i < data.ColumnCount; i++)
             {
-                var name = data.Headers[i].ToLowerInvariant();
+                var name = data.Columns[i].Header.ToLowerInvariant();
                 if (name.Contains("前") || name.Contains("旧") || name == "old" || name == "before") beforeCol = i;
                 if (name.Contains("后") || name.Contains("新") || name == "new" || name == "after") afterCol = i;
             }

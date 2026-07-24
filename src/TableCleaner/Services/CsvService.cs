@@ -36,7 +36,8 @@ public static class CsvService
         {
             var normalized = ExportNormalizationService.Prepare(data);
             var sb = new StringBuilder();
-            sb.AppendLine(string.Join(",", normalized.Headers.Select(value =>
+            sb.AppendLine(string.Join(",", normalized.Columns.Select(column =>
+                column.Header).Select(value =>
                 ExportNormalizationService.EscapeDelimitedField(value, ','))));
 
             foreach (var row in normalized.Rows)

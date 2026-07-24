@@ -6,20 +6,15 @@ namespace TableCleaner.Services;
 public static class CleaningService
 {
     /// <summary>只保留指定列</summary>
-    public static TableData KeepColumns(TableData source, List<string> kept)
+    public static TableData KeepColumns(TableData source, IReadOnlyList<ColumnReference> kept)
     {
         TableDataValidator.EnsureValid(source, "Column selection input");
-        if (kept.Count == source.ColumnCount &&
-            source.Headers.SequenceEqual(kept, StringComparer.OrdinalIgnoreCase))
-            return Clone(source);
+        var indices = source.ResolveColumnIndexes(kept);
 
-        var indices = kept
-            .Select(k => source.GetColIndex(k))
-            .Where(i => i >= 0)
-            .ToList();
-
-        var result = new TableData();
-        result.Headers = indices.Select(i => source.Headers[i]).ToList();
+        var result = new TableData
+        {
+            Columns = indices.Select(i => source.Columns[i].Clone()).ToList()
+        };
 
         foreach (var row in source.Rows)
         {
@@ -32,10 +27,6 @@ public static class CleaningService
 
     public static TableData Clone(TableData source)
     {
-        var result = new TableData();
-        result.Headers = new List<string>(source.Headers);
-        foreach (var row in source.Rows)
-            result.Rows.Add(new List<string>(row));
-        return result;
+        return source.Clone();
     }
 }

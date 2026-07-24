@@ -8,9 +8,12 @@ namespace TableCleaner.Forms;
 /// <summary>主窗体：数据预览、清洗操作入口</summary>
 public partial class MainForm : Form
 {
+    private const string RowNumberColumnId = "__tablecleaner_row_number";
+
     // Data
     private TableData? _currentTable;
     private TableData? _processedTable;
+    private HeaderDetectionResult? _lastHeaderDetection;
     public TableData? DisplayTable => _processedTable ?? _currentTable;
 
     // State
@@ -90,6 +93,7 @@ public partial class MainForm : Form
         toolMenu.DropDownItems.Add("列选择与合并规则(&K)...", null, (_, _) => OpenColumnSelector());
         toolMenu.DropDownItems.Add("替换库管理(&R)...", null, (_, _) => OpenReplacementEditor());
         toolMenu.DropDownItems.Add("创建样例数据(&S)...", null, (_, _) => CreateSampleData());
+        toolMenu.DropDownItems.Add("强制首行作表头(&H)", null, (_, _) => PromoteFirstRowToHeader());
         toolMenu.DropDownItems.Add(new ToolStripSeparator());
         toolMenu.DropDownItems.Add("模板库管理(&T)...", null, (_, _) => OpenTemplateEditor());
         _menuStrip.Items.Add(toolMenu);
@@ -108,6 +112,7 @@ public partial class MainForm : Form
         };
         AddToolBtn("📋 从剪切板导入", "从 Excel/WPS 复制表格后点击此按钮", (_, _) => ImportClipboard());
         AddToolBtn("📂 打开文件", "打开 CSV 或 Excel 文件", (_, _) => ImportFile());
+        AddToolBtn("↑ 强制首行作表头", "将当前第一条数据行提升为表头，可撤销", (_, _) => PromoteFirstRowToHeader());
         _toolStrip.Items.Add(new ToolStripSeparator());
         AddToolBtn("列选择", "选择保留列和合并规则", (_, _) => OpenColumnSelector());
         AddToolBtn("替换库", "编辑替换规则库", (_, _) => OpenReplacementEditor());
@@ -321,6 +326,12 @@ public partial class MainForm : Form
         // ---- Init ----
         ConfigService.EnsureDirs();
         _profiles.AddRange(ConfigService.LoadProfiles());
+        Shown += (_, _) =>
+        {
+            var notice = ConfigService.ConsumeSchemaNotice();
+            if (!string.IsNullOrWhiteSpace(notice))
+                MessageBox.Show(notice, "配置已升级", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
 
         // Resize
         ResizeBegin += (_, _) => RefreshGrid();
@@ -342,17 +353,35 @@ public partial class MainForm : Form
     {
         try
         {
-            // 优先尝试伪表格解析（支持竖线/加号/分号/逗号/多空格等分隔符）
             if (Clipboard.ContainsText())
             {
                 var clipText = Clipboard.GetText();
                 if (!string.IsNullOrWhiteSpace(clipText))
                 {
-                    var pseudoData = PseudoTableCleanService.ParsePseudoTableText(clipText);
-                    if (pseudoData != null && pseudoData.ColumnCount > 1)
+                    // Excel/WPS/网页复制的多列 TAB 数据是明确的结构化表格。
+                    if (clipText.Contains('\t'))
                     {
-                        SetCurrentTable(pseudoData);
-                        SetStatus($"已从剪切板导入（伪表格解析）{pseudoData.RowCount} 行 × {pseudoData.ColumnCount} 列");
+                        var structuredData = ClipboardImportService.ImportText(clipText);
+                        if (structuredData != null && structuredData.ColumnCount > 1)
+                        {
+                            var detection = clipText.IndexOfAny(new[] { '\r', '\n' }) >= 0
+                                ? HeaderDetectionResult.ExplicitHeader("结构化 TAB 剪贴板首行")
+                                : null;
+                            SetCurrentTable(structuredData, detection);
+                            SetImportStatus(
+                                $"已从剪切板导入 {structuredData.RowCount} 行 × {structuredData.ColumnCount} 列",
+                                detection);
+                            return;
+                        }
+                    }
+
+                    var pseudoResult = PseudoTableCleanService.ParsePseudoTableTextDetailed(clipText);
+                    if (pseudoResult?.Table.ColumnCount > 1)
+                    {
+                        SetCurrentTable(pseudoResult.Table, pseudoResult.HeaderDetection);
+                        SetImportStatus(
+                            $"已从剪切板导入（伪表格解析）{pseudoResult.Table.RowCount} 行 × {pseudoResult.Table.ColumnCount} 列",
+                            pseudoResult.HeaderDetection);
                         return;
                     }
                 }
@@ -368,12 +397,52 @@ public partial class MainForm : Form
                 return;
             }
             SetCurrentTable(data);
-            SetStatus($"已从剪切板导入 {data.RowCount} 行 × {data.ColumnCount} 列");
+            SetImportStatus($"已从剪切板导入 {data.RowCount} 行 × {data.ColumnCount} 列", null);
         }
         catch (Exception ex)
         {
             ShowError($"导入失败：{ex.Message}");
         }
+    }
+
+    private void PromoteFirstRowToHeader()
+    {
+        var source = DisplayTable;
+        if (source is null)
+        {
+            MessageBox.Show("请先导入数据。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (source.Rows.Count == 0)
+        {
+            MessageBox.Show("当前没有可提升为表头的数据行。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var firstRow = source.Rows[0];
+        var normalizedHeaders = HeaderNormalizationService.Normalize(
+            Enumerable.Range(0, source.ColumnCount)
+                .Select(index => index < firstRow.Count ? firstRow[index] : ""));
+        var preview = string.Join("　|　", normalizedHeaders.Take(6));
+        if (normalizedHeaders.Count > 6)
+            preview += "　|　…";
+
+        var confirmation = MessageBox.Show(
+            $"确定将当前第一条数据行提升为表头吗？\n\n新表头预览：\n{preview}\n\n" +
+            "该行会从数据区移除，列的内部身份保持不变；此操作可以撤销。",
+            "强制首行作表头",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (confirmation != DialogResult.Yes)
+            return;
+
+        _operationHistory.Push(source.Clone());
+        HeaderPromotionService.PromoteFirstRow(source);
+        _lastHeaderDetection = HeaderDetectionResult.ExplicitHeader("用户强制指定首行");
+
+        RefreshGrid();
+        SetStatus($"已将首行设为表头，当前 {source.RowCount} 行 × {source.ColumnCount} 列；可使用“撤销上一步”恢复");
     }
 
     private void ImportFile()
@@ -449,13 +518,15 @@ public partial class MainForm : Form
                 if (text.Length > 0 && text[0] == '\uFEFF')
                     text = text[1..];
 
-                var pseudoData = PseudoTableCleanService.ParsePseudoTableText(text);
-                if (pseudoData != null && pseudoData.ColumnCount > 1)
+                var pseudoResult = PseudoTableCleanService.ParsePseudoTableTextDetailed(text);
+                if (pseudoResult?.Table.ColumnCount > 1)
                 {
                     _filePath = path;
-                    SetCurrentTable(pseudoData);
+                    SetCurrentTable(pseudoResult.Table, pseudoResult.HeaderDetection);
                     _lbSheetList.Visible = false;
-                    SetStatus($"已从文本文件导入（伪表格解析）{pseudoData.RowCount} 行 × {pseudoData.ColumnCount} 列");
+                    SetImportStatus(
+                        $"已从文本文件导入（伪表格解析）{pseudoResult.Table.RowCount} 行 × {pseudoResult.Table.ColumnCount} 列",
+                        pseudoResult.HeaderDetection);
                 }
                 else
                 {
@@ -550,9 +621,8 @@ public partial class MainForm : Form
         }
 
         var currentProfile = _profiles.Count > 0 ? _profiles[0] : null;
-        var effectiveHeaders = _processedTable?.Headers ?? _currentTable.Headers;
-        var form = new ColumnSelectorForm(
-            effectiveHeaders, _profiles, currentProfile);
+        var source = _processedTable ?? _currentTable;
+        var form = new ColumnSelectorForm(source, _profiles, currentProfile);
 
         form.KeepApplied += OnColumnSelectorKeepApplied;
         form.MergeApplied += OnColumnSelectorMergeApplied;
@@ -615,8 +685,8 @@ public partial class MainForm : Form
 
         if (_replacementEditorForm == null || _replacementEditorForm.IsDisposed)
         {
-            var effectiveHeaders = _processedTable?.Headers ?? _currentTable.Headers;
-            _replacementEditorForm = new ReplacementEditorForm(effectiveHeaders);
+            var source = _processedTable ?? _currentTable;
+            _replacementEditorForm = new ReplacementEditorForm(source);
             _replacementEditorForm.ReplacementsApplied += ReplacementEditorForm_ReplacementsApplied;
             _replacementEditorForm.FormClosed += (_, _) => _replacementEditorForm = null;
             _replacementEditorForm.Show(this);
@@ -637,8 +707,8 @@ public partial class MainForm : Form
 
         if (_templateEditorForm == null || _templateEditorForm.IsDisposed)
         {
-            var effectiveHeaders = _processedTable?.Headers ?? _currentTable.Headers;
-            _templateEditorForm = new TemplateEditorForm(effectiveHeaders);
+            var source = _processedTable ?? _currentTable;
+            _templateEditorForm = new TemplateEditorForm(source);
             _templateEditorForm.TemplateApplied += TemplateEditorForm_TemplateApplied;
             _templateEditorForm.FormClosed += (_, _) => _templateEditorForm = null;
             _templateEditorForm.Templates = ConfigService.LoadTemplates();
@@ -834,7 +904,7 @@ public partial class MainForm : Form
     private void CreateSampleData()
     {
         var data = new TableData();
-        data.Headers.AddRange(new[] { "客户", "金额", "日期", "备注", "区域" });
+        data.Columns.AddRange(TableData.CreateColumns(new[] { "客户", "金额", "日期", "备注", "区域" }));
 
         var samples = new[]
         {
@@ -954,15 +1024,20 @@ public partial class MainForm : Form
             var pkg = ConfigService.ImportPackage(dialog.FileName);
             if (pkg == null)
             {
-                MessageBox.Show("配置包格式不正确，无法导入。", "导入失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(
+                    ConfigService.LastError ?? "配置包格式不正确，无法导入。",
+                    "导入失败",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
                 return;
             }
 
             _profiles.Clear();
             _profiles.AddRange(pkg.Profiles);
-            var templateCount = pkg.Templates?.Count ?? 0;
-            SetStatus($"已导入配置包：{pkg.Profiles.Count} 个方案，{pkg.Replacements.Count} 条替换规则，{templateCount} 个模板");
-            MessageBox.Show($"配置包导入成功！\n{pkg.Profiles.Count} 个列方案\n{pkg.Replacements.Count} 条替换规则\n{templateCount} 个模板",
+            var templateCount = pkg.Templates.Count;
+            var replacementCount = pkg.ReplacementGroups.Sum(group => group.Rules.Count);
+            SetStatus($"已导入配置包：{pkg.Profiles.Count} 个方案，{replacementCount} 条替换规则，{templateCount} 个模板");
+            MessageBox.Show($"配置包导入成功！\n{pkg.Profiles.Count} 个列方案\n{replacementCount} 条替换规则\n{templateCount} 个模板",
                 "导入成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
@@ -975,10 +1050,11 @@ public partial class MainForm : Form
 
     #region Helpers
 
-    private void SetCurrentTable(TableData data)
+    private void SetCurrentTable(TableData data, HeaderDetectionResult? headerDetection = null)
     {
         _currentTable = data;
         _processedTable = null;
+        _lastHeaderDetection = headerDetection;
         _originalData = data.Clone();
         _operationHistory.Clear();
         _hasKeepApplied = false;
@@ -987,6 +1063,23 @@ public partial class MainForm : Form
         ClearFilter();
         RefreshGrid();
         UpdateProfileLabel();
+    }
+
+    private void SetImportStatus(string status, HeaderDetectionResult? detection)
+    {
+        if (detection is { Decision: HeaderDecision.Uncertain })
+        {
+            SetStatus($"{status}；表头判断不确定（{detection.Confidence}分），如首行是表头请点击“强制首行作表头”");
+            return;
+        }
+
+        if (detection is { Decision: HeaderDecision.NoHeader })
+        {
+            SetStatus($"{status}；未检测到表头，如判断有误可点击“强制首行作表头”");
+            return;
+        }
+
+        SetStatus(status);
     }
 
     private void RefreshGrid()
@@ -1017,41 +1110,18 @@ public partial class MainForm : Form
         _dgvData.DataSource = null;
         _filterBindingSource.DataSource = null;
 
-        var dt = new DataTable();
-        dt.Columns.Add("序号");
-        var usedHeaders = new HashSet<string>();
-        foreach (var h in source.Headers)
-        {
-            var name = h;
-            if (!usedHeaders.Add(name))
-            {
-                // 防御性去重：旧数据可能携带重复列名
-                for (int suffix = 2; ; suffix++)
-                {
-                    name = $"{h}_{suffix}";
-                    if (usedHeaders.Add(name)) break;
-                }
-            }
-            dt.Columns.Add(name);
-        }
-
-        for (int rowIndex = 0; rowIndex < source.Rows.Count; rowIndex++)
-        {
-            var row = source.Rows[rowIndex];
-            var r = dt.NewRow();
-            r[0] = (rowIndex + 1).ToString();
-            for (int i = 0; i < row.Count && i < source.Headers.Count; i++)
-                r[i + 1] = row[i] ?? "";
-            dt.Rows.Add(r);
-        }
+        var dt = CreateGridDataTable(source);
 
         // Use BindingSource for filtering
         _filterBindingSource.DataSource = dt;
         _dgvData.DataSource = _filterBindingSource;
+        _dgvData.Columns[0].HeaderText = "序号";
+        for (var index = 0; index < source.Columns.Count; index++)
+            _dgvData.Columns[index + 1].HeaderText = source.Columns[index].Header;
         foreach (DataGridViewColumn col in _dgvData.Columns)
         {
             col.Resizable = DataGridViewTriState.True;
-            if (col.Name == "序号" || col.HeaderText == "序号")
+            if (col.Name == RowNumberColumnId)
             {
                 col.Frozen = true;
                 col.ReadOnly = true;
@@ -1077,13 +1147,83 @@ public partial class MainForm : Form
         // Refresh filter column dropdown
         _cmbFilterColumn.Items.Clear();
         _cmbFilterColumn.Items.Add("全部列");
-        for (var index = 0; index < source.Headers.Count; index++)
+        for (var index = 0; index < source.Columns.Count; index++)
         {
             _cmbFilterColumn.Items.Add(new FilterColumnOption(
-                source.Headers[index],
+                source.GetColumnDisplayName(index),
                 dt.Columns[index + 1].ColumnName));
         }
         _cmbFilterColumn.SelectedIndex = 0;
+    }
+
+    private static DataTable CreateGridDataTable(TableData source)
+    {
+        TableDataValidator.EnsureValid(source, "Grid binding input");
+        var table = new DataTable();
+        table.Columns.Add(RowNumberColumnId).Caption = "序号";
+        foreach (var column in source.Columns)
+            table.Columns.Add(column.Id).Caption = column.Header;
+
+        for (var rowIndex = 0; rowIndex < source.Rows.Count; rowIndex++)
+        {
+            var sourceRow = source.Rows[rowIndex];
+            var row = table.NewRow();
+            row[0] = (rowIndex + 1).ToString();
+            for (var columnIndex = 0; columnIndex < source.ColumnCount; columnIndex++)
+                row[columnIndex + 1] = sourceRow[columnIndex] ?? "";
+            table.Rows.Add(row);
+        }
+
+        return table;
+    }
+
+    public static bool VerifyDuplicateHeaderBinding()
+    {
+        var source = new TableData
+        {
+            Columns = TableData.CreateColumns(new[] { "序号", "数量", "数量" }),
+            Rows = new List<List<string>> { new() { "1", "2", "3" } }
+        };
+        var table = CreateGridDataTable(source);
+        if (table.Columns.Count != 4 ||
+            table.Columns.Cast<DataColumn>().Select(column => column.ColumnName).Distinct().Count() != 4 ||
+            table.Columns[0].Caption != "序号" ||
+            table.Columns[1].Caption != "序号" ||
+            table.Columns[2].Caption != "数量" ||
+            table.Columns[3].Caption != "数量")
+        {
+            return false;
+        }
+
+        var tempDir = Path.Combine(Path.GetTempPath(), $"tablecleaner-verify-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var csvPath = Path.Combine(tempDir, "duplicate.csv");
+            var xlsxPath = Path.Combine(tempDir, "duplicate.xlsx");
+            if (!CsvService.Export(source, csvPath) ||
+                File.ReadLines(csvPath).FirstOrDefault() != "序号,数量,数量" ||
+                !ExcelService.ExportToXlsx(source, xlsxPath))
+            {
+                return false;
+            }
+
+            var imported = ExcelService.ImportFirstSheet(xlsxPath);
+            return imported is not null &&
+                   imported.Columns.Select(column => column.Header)
+                       .SequenceEqual(new[] { "序号", "数量", "数量" });
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+            catch
+            {
+                // A verification temp cleanup failure must not hide the result.
+            }
+        }
     }
 
     private void ApplyFilter()
@@ -1110,7 +1250,7 @@ public partial class MainForm : Form
             var filters = new List<string>();
             foreach (DataColumn col in dt.Columns)
             {
-                if (col.ColumnName == "序号") continue;
+                if (col.ColumnName == RowNumberColumnId) continue;
                 filters.Add($"[{EscapeDataColumnName(col.ColumnName)}] LIKE '%{escaped}%'");
             }
             _filterBindingSource.Filter = string.Join(" OR ", filters);
@@ -1264,7 +1404,7 @@ public partial class MainForm : Form
             {
                 foreach (DataGridViewColumn col in _dgvData.Columns)
                 {
-                    if (col.Name != "序号" && col.HeaderText != "序号")
+                    if (col.Name != RowNumberColumnId)
                         col.ReadOnly = true;
                 }
             }
@@ -1309,7 +1449,7 @@ public partial class MainForm : Form
         _operationHistory.Push(source.Clone());
         source.Rows[sourceRowIndex][dataColIndex] = newValue;
 
-        SetStatus($"已更新：第 {e.RowIndex + 1} 行，{source.Headers[dataColIndex]}");
+        SetStatus($"已更新：第 {e.RowIndex + 1} 行，{source.Columns[dataColIndex].Header}");
     }
 
     /// <summary>
@@ -1447,7 +1587,7 @@ public partial class MainForm : Form
                 // Skip if beyond grid, or if it's the 序号列
                 if (colIdx <= 0) continue;
                 int dataColIdx = colIdx - 1;
-                if (dataColIdx >= source.Headers.Count) break;
+                if (dataColIdx >= source.Columns.Count) break;
 
                 if (rowIdx < source.Rows.Count && dataColIdx < source.Rows[rowIdx].Count)
                     source.Rows[rowIdx][dataColIdx] = fields[j];
@@ -1479,7 +1619,7 @@ public partial class MainForm : Form
         {
             var fields = line.Split('\t');
             var newRow = new List<string>();
-            for (int c = 0; c < source.Headers.Count; c++)
+            for (int c = 0; c < source.Columns.Count; c++)
             {
                 newRow.Add(c < fields.Length ? fields[c] : "");
             }
@@ -1502,7 +1642,7 @@ public partial class MainForm : Form
         _operationHistory.Push(source.Clone());
 
         var newRow = new List<string>();
-        for (int c = 0; c < source.Headers.Count; c++)
+        for (int c = 0; c < source.Columns.Count; c++)
             newRow.Add("");
         source.Rows.Add(newRow);
 
@@ -1580,9 +1720,9 @@ public partial class MainForm : Form
         }
 
         int dataColIndex = colIndex - 1; // Skip 序号列
-        if (dataColIndex < 0 || dataColIndex >= source.Headers.Count) return;
+        if (dataColIndex < 0 || dataColIndex >= source.Columns.Count) return;
 
-        var colName = source.Headers[dataColIndex];
+        var colName = source.Columns[dataColIndex].Header;
         var result = MessageBox.Show(
             $"确定要删除列「{colName}」吗？\n\n" +
             "⚠ 此操作将移除该列及其所有数据。\n" +
@@ -1598,7 +1738,7 @@ public partial class MainForm : Form
         _operationHistory.Push(source.Clone());
 
         // Remove column from data
-        source.Headers.RemoveAt(dataColIndex);
+        source.Columns.RemoveAt(dataColIndex);
         for (int r = 0; r < source.Rows.Count; r++)
         {
             if (dataColIndex < source.Rows[r].Count)
@@ -1624,10 +1764,10 @@ public partial class MainForm : Form
 
         int dataColIndex = e.ColumnIndex - 1;
         var source = DisplayTable;
-        if (source == null || dataColIndex < 0 || dataColIndex >= source.Headers.Count)
+        if (source == null || dataColIndex < 0 || dataColIndex >= source.Columns.Count)
             return;
 
-        var oldName = source.Headers[dataColIndex];
+        var oldName = source.Columns[dataColIndex].Header;
 
         using var inputDlg = new Form
         {
@@ -1690,7 +1830,7 @@ public partial class MainForm : Form
         _operationHistory.Push(source.Clone());
 
         // Update header
-        source.Headers[dataColIndex] = newName;
+        source.Columns[dataColIndex].Header = newName;
 
         // Refresh grid to update header display
         RefreshGrid();
@@ -1983,7 +2123,7 @@ public partial class MainForm : Form
             return;
         }
 
-        var colNames = dataColIndices.Select(ci => source.Headers[ci]).ToList();
+        var colNames = dataColIndices.Select(ci => source.Columns[ci].Header).ToList();
         var confirmResult = MessageBox.Show(
             $"将以下 {dataColIndices.Count} 列中分散的数据归纳到数据最多的一列：\n{string.Join("、", colNames)}\n\n" +
             "其他列被归纳后将清空，结构保留。\n确定执行列合并？",

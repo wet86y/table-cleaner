@@ -3,15 +3,13 @@ using System.Text.Json.Serialization;
 namespace TableCleaner.Models;
 
 /// <summary>
-/// 已过时。请改用 FilterMatchItem。
-/// 保留仅用于旧代码（TemplateEditorForm）的编译兼容。
+/// 模板编辑器使用的筛选规则。
 /// </summary>
-[Obsolete("Use FilterMatchItem instead")]
 public class TemplateFilterRule
 {
-    /// <summary>匹配的列名</summary>
-    [JsonPropertyName("field")]
-    public string Field { get; set; } = "";
+    /// <summary>匹配的列</summary>
+    [JsonPropertyName("column")]
+    public ColumnReference Column { get; set; } = new();
 
     /// <summary>匹配运算符：equals|contains|startsWith|endsWith|regex</summary>
     [JsonPropertyName("operator")]

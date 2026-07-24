@@ -26,7 +26,11 @@ static class Program
         ApplicationConfiguration.Initialize();
         if (args.Any(arg => string.Equals(arg, VerifyUiLayoutArgument, StringComparison.OrdinalIgnoreCase)))
         {
-            return AboutForm.VerifyUpdateLayouts() ? 0 : 20;
+            return AboutForm.VerifyUpdateLayouts() &&
+                   MainForm.VerifyDuplicateHeaderBinding() &&
+                   ConfigService.VerifyLegacyConfigBackup()
+                ? 0
+                : 20;
         }
 
         using var mutex = new Mutex(initiallyOwned: true, SingleInstanceMutexName, out var isFirstInstance);

@@ -13,12 +13,20 @@ public static class TableDataValidator
             return errors;
         }
 
+        var duplicateIds = data.Columns
+            .GroupBy(column => column.Id, StringComparer.Ordinal)
+            .Where(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
+            .Select(group => string.IsNullOrWhiteSpace(group.Key) ? "(empty)" : group.Key)
+            .ToList();
+        if (duplicateIds.Count > 0)
+            errors.Add($"Column IDs must be unique and non-empty: {string.Join(", ", duplicateIds.Take(5))}.");
+
         for (var rowIndex = 0; rowIndex < data.Rows.Count; rowIndex++)
         {
-            if (data.Rows[rowIndex].Count != data.Headers.Count)
+            if (data.Rows[rowIndex].Count != data.Columns.Count)
             {
                 errors.Add(
-                    $"Row {rowIndex + 1} has {data.Rows[rowIndex].Count} cells, expected {data.Headers.Count}.");
+                    $"Row {rowIndex + 1} has {data.Rows[rowIndex].Count} cells, expected {data.Columns.Count}.");
             }
         }
 

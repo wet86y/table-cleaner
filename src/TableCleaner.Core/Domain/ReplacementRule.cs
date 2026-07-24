@@ -12,7 +12,7 @@ public class ReplacementRule
     public string After { get; set; } = "";
 
     [JsonPropertyName("scope")]
-    public string? Scope { get; set; } // null=全表, 列名=仅该列
+    public ColumnReference? Scope { get; set; }
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
@@ -29,21 +29,18 @@ public class ReplacementRule
 /// <summary>配置导入导出包</summary>
 public class ConfigPackage
 {
-    [JsonPropertyName("version")]
-    public string Version { get; set; } = "1.0";
+    [JsonPropertyName("schemaVersion")]
+    public int SchemaVersion { get; set; } = 2;
 
     [JsonPropertyName("profiles")]
     public List<CleanProfile> Profiles { get; set; } = new();
 
-    [JsonPropertyName("replacements")]
-    public List<ReplacementRule> Replacements { get; set; } = new();
-
     [JsonPropertyName("replacementGroups")]
-    public List<ReplacementGroup>? ReplacementGroups { get; set; }
+    public List<ReplacementGroup> ReplacementGroups { get; set; } = new();
 
     [JsonPropertyName("templates")]
-    public List<CleanTemplate>? Templates { get; set; }
+    public List<CleanTemplate> Templates { get; set; } = new();
 
     [JsonPropertyName("templateFilters")]
-    public List<CleanTemplateFilter>? TemplateFilters { get; set; }
+    public List<CleanTemplateFilter> TemplateFilters { get; set; } = new();
 }

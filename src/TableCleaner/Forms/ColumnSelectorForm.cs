@@ -20,18 +20,23 @@ public class ColumnSelectorForm : Form
     private readonly Button _btnClose;
 
     private List<CleanProfile> _profiles;
-    private readonly List<string> _allColumns;
+    private sealed record ColumnChoice(string Id, ColumnReference Reference, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+
+    private readonly List<ColumnChoice> _allColumns;
 
     public CleanProfile? SelectedProfile { get; private set; }
 
-    public List<string> KeptColumns =>
-        _clbKeep.CheckedItems.Cast<string>().ToList();
+    public List<ColumnReference> KeptColumns =>
+        _clbKeep.CheckedItems.Cast<ColumnChoice>().Select(item => item.Reference).ToList();
 
-    public List<string> GroupColumns =>
-        _clbGroup.CheckedItems.Cast<string>().ToList();
+    public List<ColumnReference> GroupColumns =>
+        _clbGroup.CheckedItems.Cast<ColumnChoice>().Select(item => item.Reference).ToList();
 
-    public List<string> SumColumns =>
-        _clbSum.CheckedItems.Cast<string>().ToList();
+    public List<ColumnReference> SumColumns =>
+        _clbSum.CheckedItems.Cast<ColumnChoice>().Select(item => item.Reference).ToList();
 
     /// <summary>列清洗已应用事件</summary>
     public event EventHandler? KeepApplied;
@@ -39,10 +44,15 @@ public class ColumnSelectorForm : Form
     /// <summary>合并规则已应用事件</summary>
     public event EventHandler? MergeApplied;
 
-    public ColumnSelectorForm(List<string> allColumns, List<CleanProfile> existingProfiles, CleanProfile? current = null)
+    public ColumnSelectorForm(TableData table, List<CleanProfile> existingProfiles, CleanProfile? current = null)
     {
         Icon = AppVisuals.WindowIcon;
-        _allColumns = allColumns;
+        _allColumns = table.Columns
+            .Select((column, index) => new ColumnChoice(
+                column.Id,
+                table.GetColumnReference(index),
+                table.GetColumnDisplayName(index)))
+            .ToList();
         _profiles = existingProfiles;
 
         Text = "列选择与合并规则";
@@ -134,7 +144,7 @@ public class ColumnSelectorForm : Form
         columnsPanel.Controls.Add(CreateColumnPanel("求和列", _clbSum, (_, _) => { sumAllChecked = !sumAllChecked; ToggleAll(_clbSum, sumAllChecked); }), 2, 0);
 
         // Populate column lists
-        foreach (var col in allColumns)
+        foreach (var col in _allColumns)
         {
             _clbKeep.Items.Add(col, true);
             _clbGroup.Items.Add(col);
@@ -162,7 +172,7 @@ public class ColumnSelectorForm : Form
                 MessageBox.Show("请至少选择一个分组列。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            var overlap = GroupColumns.Intersect(SumColumns, StringComparer.OrdinalIgnoreCase).ToList();
+            var overlap = GroupColumns.Intersect(SumColumns).ToList();
             if (overlap.Count > 0)
             {
                 MessageBox.Show($"以下列不能同时作为分组列和求和列：\n{string.Join("、", overlap)}",
@@ -236,22 +246,22 @@ public class ColumnSelectorForm : Form
         // Keep columns
         for (int i = 0; i < _clbKeep.Items.Count; i++)
         {
-            var name = _clbKeep.Items[i].ToString();
-            _clbKeep.SetItemChecked(i, profile.KeptColumns.Contains(name, StringComparer.OrdinalIgnoreCase));
+            var item = (ColumnChoice)_clbKeep.Items[i];
+            _clbKeep.SetItemChecked(i, profile.KeptColumns.Contains(item.Reference));
         }
 
         // Group columns
         for (int i = 0; i < _clbGroup.Items.Count; i++)
         {
-            var name = _clbGroup.Items[i].ToString();
-            _clbGroup.SetItemChecked(i, profile.GroupColumns.Contains(name, StringComparer.OrdinalIgnoreCase));
+            var item = (ColumnChoice)_clbGroup.Items[i];
+            _clbGroup.SetItemChecked(i, profile.GroupColumns.Contains(item.Reference));
         }
 
         // Sum columns
         for (int i = 0; i < _clbSum.Items.Count; i++)
         {
-            var name = _clbSum.Items[i].ToString();
-            _clbSum.SetItemChecked(i, profile.SumColumns.Contains(name, StringComparer.OrdinalIgnoreCase));
+            var item = (ColumnChoice)_clbSum.Items[i];
+            _clbSum.SetItemChecked(i, profile.SumColumns.Contains(item.Reference));
         }
     }
 

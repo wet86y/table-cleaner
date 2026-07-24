@@ -40,6 +40,9 @@ public static partial class PseudoTableCleanService
     /// 如果文本不含任何有效分隔符结构，或解析后无有效数据，返回 null。
     /// </summary>
     public static TableData? ParsePseudoTableText(string text)
+        => ParsePseudoTableTextDetailed(text)?.Table;
+
+    public static ParsedTableResult? ParsePseudoTableTextDetailed(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;
@@ -56,7 +59,7 @@ public static partial class PseudoTableCleanService
         if (delimiter == null)
             return null;
 
-        return ParseWithDelimiter(rawLines, delimiter);
+        return ParseWithDelimiterDetailed(rawLines, delimiter);
     }
 
     /// <summary>
@@ -73,7 +76,7 @@ public static partial class PseudoTableCleanService
 
         text = text.Replace("\r\n", "\n").Replace("\r", "\n");
         var rawLines = text.Split('\n');
-        return ParseWithDelimiter(rawLines, delimiter);
+        return ParseWithDelimiterDetailed(rawLines, delimiter)?.Table;
     }
 
     /// <summary>
@@ -88,12 +91,12 @@ public static partial class PseudoTableCleanService
         bool hasPotentialDelimiter = source.Rows.Any(r =>
             r.Count > 0 && r[0] != null && ContainsPotentialDelimiter(r[0]));
 
-        if (!hasPotentialDelimiter && !ContainsPotentialDelimiter(source.Headers[0]))
+        if (!hasPotentialDelimiter && !ContainsPotentialDelimiter(source.Columns[0].Header))
             return null;
 
         var sb = new StringBuilder();
-        if (source.Headers.Count > 0 && ContainsPotentialDelimiter(source.Headers[0]))
-            sb.AppendLine(source.Headers[0]);
+        if (source.Columns.Count > 0 && ContainsPotentialDelimiter(source.Columns[0].Header))
+            sb.AppendLine(source.Columns[0].Header);
         foreach (var row in source.Rows)
         {
             if (row.Count > 0 && !string.IsNullOrEmpty(row[0]))
@@ -102,7 +105,7 @@ public static partial class PseudoTableCleanService
 
         var combinedText = sb.ToString();
         var result = ParsePseudoTableText(combinedText);
-        if (result is null || source.Headers.Count == 0 || !ContainsPotentialDelimiter(source.Headers[0]))
+        if (result is null || source.Columns.Count == 0 || !ContainsPotentialDelimiter(source.Columns[0].Header))
             return result;
 
         var normalizedText = combinedText.Replace("\r\n", "\n").Replace("\r", "\n");
@@ -110,13 +113,13 @@ public static partial class PseudoTableCleanService
         if (delimiter is null)
             return result;
 
-        var parsedHeader = SplitByDelimiter(source.Headers[0], delimiter)
+        var parsedHeader = SplitByDelimiter(source.Columns[0].Header, delimiter)
             .Select(value => value.Trim())
             .ToList();
         if (parsedHeader.Count != result.ColumnCount)
             return result;
 
-        result.Headers = parsedHeader;
+        result.Columns = TableData.CreateColumns(parsedHeader);
         if (result.Rows.Count > 0 && result.Rows[0].SequenceEqual(parsedHeader))
             result.Rows.RemoveAt(0);
         return result;
@@ -306,7 +309,7 @@ public static partial class PseudoTableCleanService
     /// <summary>
     /// 使用指定分隔符解析原始行列表。
     /// </summary>
-    private static TableData? ParseWithDelimiter(string[] rawLines, DelimiterInfo delimiter)
+    private static ParsedTableResult? ParseWithDelimiterDetailed(string[] rawLines, DelimiterInfo delimiter)
     {
         // Phase 1: 收集有效数据行，跳过分隔线和空行
         var rawHasSeparatorAfterFirst = DetectSeparatorAfterFirstPipe(rawLines);
@@ -354,7 +357,8 @@ public static partial class PseudoTableCleanService
             return null;
 
         // Phase 4: 表头检测
-        bool hasHeader = DetectHeader(normalized, rawHasSeparatorAfterFirst);
+        var headerDetection = HeaderDetectionService.Detect(normalized, rawHasSeparatorAfterFirst);
+        bool hasHeader = headerDetection.Decision == HeaderDecision.Header;
         List<string>? headers = null;
         List<List<string>> dataRows;
 
@@ -426,16 +430,21 @@ public static partial class PseudoTableCleanService
         var result = new TableData();
         if (hasHeader)
         {
-            result.Headers = keepIndices.Select(ci => ci < headers!.Count ? headers[ci] : "").ToList();
+            result.Columns = TableData.CreateColumns(
+                keepIndices.Select(ci => ci < headers!.Count ? headers[ci] : ""));
         }
         else
         {
             for (int i = 0; i < keepIndices.Count; i++)
-                result.Headers.Add($"列{i + 1}");
+                result.Columns.Add(TableColumn.Create($"列{i + 1}"));
         }
         result.Rows = projectedRows;
 
-        return result;
+        return new ParsedTableResult
+        {
+            Table = result,
+            HeaderDetection = headerDetection
+        };
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -531,109 +540,6 @@ public static partial class PseudoTableCleanService
             return IsSeparatorLine(trimmed);
         }
 
-        return false;
-    }
-
-    /// <summary>
-    /// 判断第一行是否表头行。
-    /// 策略：1) 原始行中第一条有效行后紧跟分隔线 → 表头；
-    ///       2) 第一行内层所有单元格非空，且后续至少一行有空单元格 → 表头；
-    ///       3) 第一行全为非数值文本，且后续行至少有一个数值型单元格 → 表头。
-    /// </summary>
-    private static bool DetectHeader(List<List<string>> allRows, bool firstPipeFollowedBySeparator)
-    {
-        if (allRows.Count < 2)
-            return false;
-
-        // 策略 1：分隔线紧随其后
-        if (firstPipeFollowedBySeparator)
-            return true;
-
-        var firstRow = allRows[0];
-        int firstNonEmpty = firstRow.FindIndex(c => !string.IsNullOrWhiteSpace(c));
-        int lastNonEmpty = firstRow.FindLastIndex(c => !string.IsNullOrWhiteSpace(c));
-
-        if (firstNonEmpty < 0)
-            return false;
-
-        // 检查第一行内层是否全部非空
-        bool allInnerNonEmpty = true;
-        for (int i = firstNonEmpty; i <= lastNonEmpty; i++)
-        {
-            if (string.IsNullOrWhiteSpace(firstRow[i]))
-            {
-                allInnerNonEmpty = false;
-                break;
-            }
-        }
-
-        if (!allInnerNonEmpty)
-            return false;
-
-        // 策略 2：后续行有空单元格 → 第一行更可能是表头
-        bool subsequentHasEmpty = allRows.Skip(1).Any(r =>
-        {
-            int end = Math.Min(r.Count - 1, lastNonEmpty);
-            for (int i = firstNonEmpty; i <= end && i < r.Count; i++)
-            {
-                if (string.IsNullOrWhiteSpace(r[i]))
-                    return true;
-            }
-            return false;
-        });
-
-        if (subsequentHasEmpty)
-            return true;
-
-        // 策略 3：第一行全为非数值文本 + 后续行有数值 → 表头
-        // 这是处理全满数据的关键启发式
-        bool firstRowAllText = IsAllNonNumeric(firstRow, firstNonEmpty, lastNonEmpty);
-        bool subsequentHasNumeric = allRows.Skip(1).Any(r =>
-            HasNumericCell(r, firstNonEmpty, lastNonEmpty));
-
-        if (firstRowAllText && subsequentHasNumeric)
-            return true;
-
-        return false;
-    }
-
-    /// <summary>
-    /// 检查指定范围内所有单元格是否都是非数值文本。
-    /// 数值判定：可解析为 double 的视为数值；含中文的必定非数值。
-    /// </summary>
-    private static bool IsAllNonNumeric(List<string> row, int start, int end)
-    {
-        for (int i = start; i <= end && i < row.Count; i++)
-        {
-            var cell = row[i].Trim();
-            if (string.IsNullOrEmpty(cell))
-                continue;
-            // 含中文 → 非数值
-            if (cell.Any(c => c > 0x4E00 && c < 0x9FFF))
-                continue;
-            // 可解析为 double → 数值
-            if (double.TryParse(cell, out _))
-                return false;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// 检查指定范围内是否有数值型单元格。
-    /// </summary>
-    private static bool HasNumericCell(List<string> row, int start, int end)
-    {
-        for (int i = start; i <= end && i < row.Count; i++)
-        {
-            var cell = row[i].Trim();
-            if (string.IsNullOrEmpty(cell))
-                continue;
-            // 含中文 → 不是纯数值
-            if (cell.Any(c => c > 0x4E00 && c < 0x9FFF))
-                continue;
-            if (double.TryParse(cell, out _))
-                return true;
-        }
         return false;
     }
 

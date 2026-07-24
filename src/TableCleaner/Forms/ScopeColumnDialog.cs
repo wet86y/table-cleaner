@@ -1,3 +1,5 @@
+using TableCleaner.Models;
+
 namespace TableCleaner.Forms;
 
 /// <summary>作用列多选弹窗（按钮式入口，替代窄 CheckedListBox，支持实时筛选过滤并保留勾选状态）</summary>
@@ -11,16 +13,25 @@ public class ScopeColumnDialog : Form
     private readonly Button _btnOk;
     private readonly Button _btnCancel;
 
-    private readonly List<string> _allColumns;
-    private readonly HashSet<string> _checkedState = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record ColumnChoice(ColumnReference Reference, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+
+    private readonly List<ColumnChoice> _allColumns;
+    private readonly HashSet<ColumnReference> _checkedState = new();
 
     /// <summary>用户选择的列列表；null 或空 = 全表</summary>
-    public List<string>? SelectedColumns { get; private set; }
+    public List<ColumnReference>? SelectedColumns { get; private set; }
 
-    public ScopeColumnDialog(List<string> allColumns, List<string>? initialChecked = null)
+    public ScopeColumnDialog(TableData table, List<ColumnReference>? initialChecked = null)
     {
         Icon = AppVisuals.WindowIcon;
-        _allColumns = allColumns;
+        _allColumns = table.Columns
+            .Select((_, index) => new ColumnChoice(
+                table.GetColumnReference(index),
+                table.GetColumnDisplayName(index)))
+            .ToList();
 
         Text = "选择作用列（留空=全表）";
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -84,13 +95,13 @@ public class ScopeColumnDialog : Form
             IntegralHeight = false
         };
 
-        foreach (var col in allColumns)
+        foreach (var col in _allColumns)
         {
             _clbColumns.Items.Add(col);
             bool shouldCheck = initialChecked is { Count: > 0 } &&
-                               initialChecked.Contains(col, StringComparer.OrdinalIgnoreCase);
+                               initialChecked.Contains(col.Reference);
             if (shouldCheck)
-                _checkedState.Add(col);
+                _checkedState.Add(col.Reference);
         }
         RestoreCheckedStateToVisible();
 
@@ -109,7 +120,7 @@ public class ScopeColumnDialog : Form
         _btnOk.Click += (_, _) =>
         {
             SyncCheckedStateFromVisible();
-            SelectedColumns = _checkedState.Count > 0 ? new List<string>(_checkedState) : null;
+            SelectedColumns = _checkedState.Count > 0 ? new List<ColumnReference>(_checkedState) : null;
         };
         _btnClearAll = new Button { Text = "取消全选", AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
         _btnClearAll.Click += (_, _) =>
@@ -123,12 +134,9 @@ public class ScopeColumnDialog : Form
         {
             for (int i = 0; i < _clbColumns.Items.Count; i++)
             {
-                var name = _clbColumns.Items[i].ToString();
-                if (name != null)
-                {
-                    _clbColumns.SetItemChecked(i, true);
-                    _checkedState.Add(name);
-                }
+                var item = (ColumnChoice)_clbColumns.Items[i];
+                _clbColumns.SetItemChecked(i, true);
+                _checkedState.Add(item.Reference);
             }
         };
 
@@ -147,12 +155,11 @@ public class ScopeColumnDialog : Form
     {
         for (int i = 0; i < _clbColumns.Items.Count; i++)
         {
-            var name = _clbColumns.Items[i].ToString();
-            if (name == null) continue;
+            var item = (ColumnChoice)_clbColumns.Items[i];
             if (_clbColumns.GetItemChecked(i))
-                _checkedState.Add(name);
+                _checkedState.Add(item.Reference);
             else
-                _checkedState.Remove(name);
+                _checkedState.Remove(item.Reference);
         }
     }
 
@@ -160,8 +167,8 @@ public class ScopeColumnDialog : Form
     {
         for (int i = 0; i < _clbColumns.Items.Count; i++)
         {
-            var name = _clbColumns.Items[i].ToString();
-            if (name != null && _checkedState.Contains(name))
+            var item = (ColumnChoice)_clbColumns.Items[i];
+            if (_checkedState.Contains(item.Reference))
                 _clbColumns.SetItemChecked(i, true);
         }
     }
@@ -175,7 +182,7 @@ public class ScopeColumnDialog : Form
         foreach (var col in _allColumns)
         {
             bool matches = string.IsNullOrEmpty(keyword) ||
-                           col.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+                           col.DisplayName.Contains(keyword, StringComparison.OrdinalIgnoreCase);
             if (matches)
                 _clbColumns.Items.Add(col);
         }

@@ -1,74 +1,139 @@
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using TableCleaner.Models;
 
 namespace TableCleaner.Services;
 
-/// <summary>配置持久化：profiles.json、replacements.json（含分组）、配置包 zip</summary>
+/// <summary>仅支持 schemaVersion=2 的配置持久化。</summary>
 public static class ConfigService
 {
+    public const int CurrentSchemaVersion = 2;
+
     private static readonly string AppDataDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "笨蛋表格");
-
     private static readonly string BaseDir = Path.Combine(AppDataDir, "config");
-
-    private static readonly string LegacyBaseDir = Path.Combine(
-        AppDomain.CurrentDomain.BaseDirectory, "config");
-
-    private static bool _initialized;
-
     private static readonly string ProfilesPath = Path.Combine(BaseDir, "profiles.json");
     private static readonly string ReplacementsPath = Path.Combine(BaseDir, "replacements.json");
+    private static readonly string TemplatesPath = Path.Combine(BaseDir, "templates.json");
+    private static readonly string FiltersPath = Path.Combine(BaseDir, "templateFilters.json");
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    private static readonly JsonSerializerOptions JsonLenient = new()
+    private static bool _initialized;
+    private static string? _schemaNotice;
+
+    public static string? LastError { get; private set; }
+
+    private sealed class ConfigDocument<T>
     {
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        PropertyNameCaseInsensitive = true
-    };
+        [JsonPropertyName("schemaVersion")]
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
+        [JsonPropertyName("data")]
+        public T? Data { get; set; }
+    }
 
     public static void EnsureDirs()
     {
-        if (!_initialized)
-        {
-            _initialized = true;
-            Directory.CreateDirectory(BaseDir);
-            MigrateLegacyConfig();
-        }
+        if (_initialized)
+            return;
 
+        _initialized = true;
         Directory.CreateDirectory(BaseDir);
+        EnsureCurrentSchema();
     }
 
-    /// <summary>
-    /// 将旧版 exe 隔壁 config/ 中的配置文件迁到 %LocalAppData%。
-    /// 仅当目标目录为空时执行一次性迁移。
-    /// </summary>
-    private static void MigrateLegacyConfig()
+    public static string? ConsumeSchemaNotice()
+    {
+        EnsureDirs();
+        var notice = _schemaNotice;
+        _schemaNotice = null;
+        return notice;
+    }
+
+    private static void EnsureCurrentSchema()
+    {
+        _schemaNotice = InitializeSchema(BaseDir, AppDataDir);
+    }
+
+    private static string? InitializeSchema(string baseDir, string appDataDir)
+    {
+        var markerPath = Path.Combine(baseDir, ".schema-v2");
+        if (File.Exists(markerPath))
+            return null;
+
+        var existingJson = Directory.GetFiles(baseDir, "*.json");
+        var allCurrent = existingJson.Length > 0 && existingJson.All(IsCurrentDocument);
+        string? notice = null;
+        if (!allCurrent && existingJson.Length > 0)
+        {
+            var backupDir = Path.Combine(
+                appDataDir,
+                $"config-legacy-{DateTime.Now:yyyyMMdd-HHmmss}");
+            Directory.CreateDirectory(backupDir);
+            foreach (var file in existingJson)
+                File.Copy(file, Path.Combine(backupDir, Path.GetFileName(file)), overwrite: false);
+
+            WriteDocument(Path.Combine(baseDir, "profiles.json"), new List<CleanProfile>());
+            WriteDocument(Path.Combine(baseDir, "replacements.json"), new List<ReplacementGroup>());
+            WriteDocument(Path.Combine(baseDir, "templates.json"), new List<CleanTemplate>());
+            WriteDocument(Path.Combine(baseDir, "templateFilters.json"), new List<CleanTemplateFilter>());
+            notice = $"检测到旧版配置，已备份到：{backupDir}。当前版本已启用全新的列引用配置，请重新创建规则。";
+        }
+
+        File.WriteAllText(markerPath, CurrentSchemaVersion.ToString());
+        return notice;
+    }
+
+    private static bool IsCurrentDocument(string path)
     {
         try
         {
-            if (!Directory.Exists(LegacyBaseDir))
-            {
-                return;
-            }
-
-            foreach (var file in Directory.GetFiles(LegacyBaseDir, "*.json"))
-            {
-                var dest = Path.Combine(BaseDir, Path.GetFileName(file));
-                if (!File.Exists(dest))
-                    File.Copy(file, dest, overwrite: false);
-            }
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.TryGetProperty("schemaVersion", out var version) &&
+                   version.GetInt32() == CurrentSchemaVersion &&
+                   document.RootElement.TryGetProperty("data", out _);
         }
         catch
         {
-            // Best-effort migration; fall back to defaults on failure.
+            return false;
+        }
+    }
+
+    public static bool VerifyLegacyConfigBackup()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"tablecleaner-config-verify-{Guid.NewGuid():N}");
+        var configDir = Path.Combine(root, "config");
+        Directory.CreateDirectory(configDir);
+        try
+        {
+            var legacyPath = Path.Combine(configDir, "profiles.json");
+            File.WriteAllText(legacyPath, "[{\"name\":\"legacy\"}]");
+            var notice = InitializeSchema(configDir, root);
+            var backup = Directory.GetDirectories(root, "config-legacy-*").SingleOrDefault();
+            return !string.IsNullOrWhiteSpace(notice) &&
+                   backup is not null &&
+                   File.Exists(Path.Combine(backup, "profiles.json")) &&
+                   IsCurrentDocument(legacyPath) &&
+                   File.Exists(Path.Combine(configDir, ".schema-v2"));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Ignore verification temp cleanup failures.
+            }
         }
     }
 
@@ -86,141 +151,92 @@ public static class ConfigService
         return dir;
     }
 
-    #region Profiles
+    public static List<CleanProfile> LoadProfiles() =>
+        ReadDocument(ProfilesPath, new List<CleanProfile>());
 
-    public static List<CleanProfile> LoadProfiles()
-    {
-        EnsureDirs();
-        if (!File.Exists(ProfilesPath)) return new List<CleanProfile>();
-        try
+    public static void SaveProfiles(List<CleanProfile> profiles) =>
+        WriteDocument(ProfilesPath, profiles);
+
+    public static List<ReplacementRule> LoadReplacements() =>
+        LoadReplacementGroups().SelectMany(group => group.Rules).ToList();
+
+    public static void SaveReplacements(List<ReplacementRule> replacements) =>
+        SaveReplacementGroups(new List<ReplacementGroup>
         {
-            var json = File.ReadAllText(ProfilesPath);
-            return JsonSerializer.Deserialize<List<CleanProfile>>(json) ?? new();
-        }
-        catch { return new(); }
-    }
+            new() { Name = "默认分组", Rules = replacements }
+        });
 
-    public static void SaveProfiles(List<CleanProfile> profiles)
-    {
-        EnsureDirs();
-        WriteTextAtomically(ProfilesPath, JsonSerializer.Serialize(profiles, JsonOpts));
-    }
-
-    #endregion
-
-    #region Replacements (flat — legacy compat, used by old callers)
-
-    /// <summary>加载替换规则（扁平列表，兼容旧代码）</summary>
-    public static List<ReplacementRule> LoadReplacements()
-    {
-        var groups = LoadReplacementGroups();
-        return groups.SelectMany(g => g.Rules).ToList();
-    }
-
-    /// <summary>保存替换规则（扁平列表，所有规则归入默认分组）</summary>
-    public static void SaveReplacements(List<ReplacementRule> replacements)
-    {
-        var groups = new List<ReplacementGroup>
-        {
-            new ReplacementGroup { Name = "默认分组", Rules = replacements }
-        };
-        SaveReplacementGroups(groups);
-    }
-
-    #endregion
-
-    #region Replacement Groups
-
-    /// <summary>加载替换规则分组。兼容旧版扁平列表格式。</summary>
     public static List<ReplacementGroup> LoadReplacementGroups()
     {
-        EnsureDirs();
-        if (!File.Exists(ReplacementsPath))
-            return new List<ReplacementGroup> { new ReplacementGroup { Name = "默认分组" } };
-
-        try
-        {
-            var json = File.ReadAllText(ReplacementsPath);
-
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
-            {
-                var first = doc.RootElement[0];
-
-                if (first.TryGetProperty("rules", out _))
-                {
-                    // New format: array of ReplacementGroup (has "rules")
-                    var groups = JsonSerializer.Deserialize<List<ReplacementGroup>>(json, JsonLenient);
-                    if (groups != null && groups.Count > 0) return groups;
-                }
-                else if (first.TryGetProperty("before", out _) || first.TryGetProperty("enabled", out _))
-                {
-                    // Old format: flat list of ReplacementRule → wrap in default group
-                    var rules = JsonSerializer.Deserialize<List<ReplacementRule>>(json, JsonLenient);
-                    if (rules != null && rules.Count > 0)
-                        return new List<ReplacementGroup> { new ReplacementGroup { Name = "默认分组", Rules = rules } };
-                }
-            }
-
-            // Empty array or unknown format → default group with empty rules
-        }
-        catch
-        {
-            // Ignore corrupt/empty files
-        }
-
-        return new List<ReplacementGroup> { new ReplacementGroup { Name = "默认分组" } };
+        var groups = ReadDocument(ReplacementsPath, new List<ReplacementGroup>());
+        return groups.Count > 0
+            ? groups
+            : new List<ReplacementGroup> { new() { Name = "默认分组" } };
     }
 
-    /// <summary>保存替换规则分组</summary>
-    public static void SaveReplacementGroups(List<ReplacementGroup> groups)
-    {
-        EnsureDirs();
-        WriteTextAtomically(ReplacementsPath, JsonSerializer.Serialize(groups, JsonOpts));
-    }
+    public static void SaveReplacementGroups(List<ReplacementGroup> groups) =>
+        WriteDocument(ReplacementsPath, groups);
 
-    #endregion
+    public static List<CleanTemplate> LoadTemplates() =>
+        ReadDocument(TemplatesPath, new List<CleanTemplate>());
 
-    #region Config Package (Zip)
+    public static void SaveTemplates(List<CleanTemplate> templates) =>
+        WriteDocument(TemplatesPath, templates);
 
-    /// <summary>导出完整配置包为 zip</summary>
+    public static List<CleanTemplateFilter> LoadFilters() =>
+        ReadDocument(FiltersPath, new List<CleanTemplateFilter>());
+
+    public static void SaveFilters(List<CleanTemplateFilter> filters) =>
+        WriteDocument(FiltersPath, filters);
+
     public static bool ExportPackage(string zipPath)
     {
+        LastError = null;
         try
         {
-            var pkg = new ConfigPackage
+            var package = new ConfigPackage
             {
+                SchemaVersion = CurrentSchemaVersion,
                 Profiles = LoadProfiles(),
-                Replacements = LoadReplacements(),
                 ReplacementGroups = LoadReplacementGroups(),
                 Templates = LoadTemplates(),
                 TemplateFilters = LoadFilters()
             };
-            var json = JsonSerializer.Serialize(pkg, JsonOpts);
 
-            if (File.Exists(zipPath)) File.Delete(zipPath);
+            if (File.Exists(zipPath))
+                File.Delete(zipPath);
+
             using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
             var entry = archive.CreateEntry("config.json", CompressionLevel.Optimal);
             using var stream = entry.Open();
             using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
-            writer.Write(json);
+            writer.Write(JsonSerializer.Serialize(package, JsonOptions));
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            LastError = ex.Message;
             try
             {
-                if (File.Exists(zipPath)) File.Delete(zipPath);
+                if (File.Exists(zipPath))
+                    File.Delete(zipPath);
             }
-            catch { }
+            catch
+            {
+                // Ignore cleanup failures.
+            }
             return false;
         }
     }
 
-    /// <summary>导入配置包，覆盖当前配置</summary>
     public static ConfigPackage? ImportPackage(string zipPath)
     {
-        if (!File.Exists(zipPath)) return null;
+        LastError = null;
+        if (!File.Exists(zipPath))
+        {
+            LastError = "配置包不存在。";
+            return null;
+        }
 
         try
         {
@@ -228,172 +244,65 @@ public static class ConfigService
             var entry = archive.Entries.SingleOrDefault(candidate =>
                 string.Equals(candidate.FullName.Replace('\\', '/'), "config.json", StringComparison.OrdinalIgnoreCase));
             const long maxConfigBytes = 16 * 1024 * 1024;
-            if (entry == null || entry.Length <= 0 || entry.Length > maxConfigBytes)
+            if (entry is null || entry.Length <= 0 || entry.Length > maxConfigBytes)
+            {
+                LastError = "配置包缺少有效的 config.json。";
                 return null;
+            }
 
             using var stream = entry.Open();
-            using var reader = new StreamReader(stream);
-            var json = reader.ReadToEnd();
-            var pkg = JsonSerializer.Deserialize<ConfigPackage>(json, JsonLenient);
-
-            if (pkg != null)
+            var package = JsonSerializer.Deserialize<ConfigPackage>(stream, JsonOptions);
+            if (package is null || package.SchemaVersion != CurrentSchemaVersion)
             {
-                pkg.Profiles ??= new List<CleanProfile>();
-                pkg.Replacements ??= new List<ReplacementRule>();
-                if (pkg.ReplacementGroups != null)
-                {
-                    foreach (var group in pkg.ReplacementGroups)
-                        group.Rules ??= new List<ReplacementRule>();
-                }
-
-                SaveProfiles(pkg.Profiles);
-                // Save groups if available, otherwise save flat replacements
-                if (pkg.ReplacementGroups is { Count: > 0 })
-                    SaveReplacementGroups(pkg.ReplacementGroups);
-                else if (pkg.Replacements is { Count: > 0 })
-                    SaveReplacements(pkg.Replacements);
-
-                // Null means an older package that did not contain template libraries.
-                if (pkg.Templates is not null)
-                    SaveTemplates(pkg.Templates);
-                if (pkg.TemplateFilters is not null)
-                    SaveFilters(pkg.TemplateFilters);
-            }
-            return pkg;
-        }
-        catch { return null; }
-    }
-
-    #endregion
-
-    #region Template Library
-
-    private static readonly string TemplatesPath = Path.Combine(BaseDir, "templates.json");
-
-    public static List<CleanTemplate> LoadTemplates()
-    {
-        EnsureDirs();
-        if (!File.Exists(TemplatesPath)) return new List<CleanTemplate>();
-        try
-        {
-            var json = File.ReadAllText(TemplatesPath);
-            return JsonSerializer.Deserialize<List<CleanTemplate>>(json, JsonLenient) ?? new();
-        }
-        catch { return new(); }
-    }
-
-    public static void SaveTemplates(List<CleanTemplate> templates)
-    {
-        EnsureDirs();
-        WriteTextAtomically(TemplatesPath, JsonSerializer.Serialize(templates, JsonOpts));
-    }
-
-    private static readonly string FiltersPath = Path.Combine(BaseDir, "templateFilters.json");
-
-    public static List<CleanTemplateFilter> LoadFilters()
-    {
-        EnsureDirs();
-        if (!File.Exists(FiltersPath)) return new List<CleanTemplateFilter>();
-        try
-        {
-            var json = File.ReadAllText(FiltersPath);
-
-            // 检测是否为旧格式（有 "rules" 字段但无 "matchItems"）
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
-            {
-                var first = doc.RootElement[0];
-                bool hasRules = first.TryGetProperty("rules", out _);
-                bool hasMatchItems = first.TryGetProperty("matchItems", out _);
-
-                if (hasRules && !hasMatchItems)
-                {
-                    // 旧格式：将 "rules" 转换为 "matchItems"
-                    var migrated = MigrateOldFilterJson(json);
-                    if (migrated != null)
-                    {
-                        // 写回迁移后的 JSON
-                        WriteTextAtomically(FiltersPath, migrated);
-                        return JsonSerializer.Deserialize<List<CleanTemplateFilter>>(migrated, JsonLenient) ?? new();
-                    }
-                }
+                LastError = $"配置包版本不兼容，仅支持 schemaVersion={CurrentSchemaVersion}。";
+                return null;
             }
 
-            return JsonSerializer.Deserialize<List<CleanTemplateFilter>>(json, JsonLenient) ?? new();
+            SaveProfiles(package.Profiles);
+            SaveReplacementGroups(package.ReplacementGroups);
+            SaveTemplates(package.Templates);
+            SaveFilters(package.TemplateFilters);
+            return package;
         }
-        catch { return new(); }
-    }
-
-    /// <summary>将旧格式 Rules 迁移为新格式 MatchItems</summary>
-    private static string? MigrateOldFilterJson(string json)
-    {
-        try
+        catch (Exception ex)
         {
-            using var doc = JsonDocument.Parse(json);
-            var entries = new List<Dictionary<string, JsonElement?>>();
-
-            foreach (var element in doc.RootElement.EnumerateArray())
-            {
-                var newEntry = new Dictionary<string, JsonElement?>();
-
-                // 复制除 "rules" 以外的所有字段
-                foreach (var prop in element.EnumerateObject())
-                {
-                    if (prop.Name == "rules")
-                    {
-                        // 将旧 rules 数组转换为 matchItems
-                        var matchItems = new List<Dictionary<string, string>>();
-                        foreach (var rule in prop.Value.EnumerateArray())
-                        {
-                            var field = "";
-                            var value = "";
-                            if (rule.TryGetProperty("field", out var f)) field = f.GetString() ?? "";
-                            if (rule.TryGetProperty("value", out var v)) value = v.GetString() ?? "";
-                            matchItems.Add(new Dictionary<string, string>
-                            {
-                                ["field"] = field,
-                                ["value"] = value
-                            });
-                        }
-
-                        // 序列化 matchItems 为 JSON 字符串
-                        var miJson = JsonSerializer.Serialize(matchItems, JsonOpts);
-                        using var miDoc = JsonDocument.Parse(miJson);
-                        newEntry["matchItems"] = miDoc.RootElement.Clone();
-                    }
-                    else
-                    {
-                        newEntry[prop.Name] = prop.Value.Clone();
-                    }
-                }
-
-                entries.Add(newEntry);
-            }
-
-            // 重建完整 JSON
-            var resultEntries = new List<object>();
-            foreach (var entry in entries)
-            {
-                var dict = new Dictionary<string, object?>();
-                foreach (var kvp in entry)
-                {
-                    dict[kvp.Key] = kvp.Value;
-                }
-                resultEntries.Add(dict);
-            }
-
-            return JsonSerializer.Serialize(resultEntries, JsonOpts);
-        }
-        catch
-        {
+            LastError = ex.Message;
             return null;
         }
     }
 
-    public static void SaveFilters(List<CleanTemplateFilter> filters)
+    private static T ReadDocument<T>(string path, T fallback)
     {
         EnsureDirs();
-        WriteTextAtomically(FiltersPath, JsonSerializer.Serialize(filters, JsonOpts));
+        if (!File.Exists(path))
+            return fallback;
+
+        try
+        {
+            var document = JsonSerializer.Deserialize<ConfigDocument<T>>(
+                File.ReadAllText(path),
+                JsonOptions);
+            return document is { SchemaVersion: CurrentSchemaVersion, Data: not null }
+                ? document.Data
+                : fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static void WriteDocument<T>(string path, T data)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+        var document = new ConfigDocument<T>
+        {
+            SchemaVersion = CurrentSchemaVersion,
+            Data = data
+        };
+        WriteTextAtomically(path, JsonSerializer.Serialize(document, JsonOptions));
     }
 
     private static void WriteTextAtomically(string path, string content)
@@ -410,6 +319,4 @@ public static class ConfigService
                 File.Delete(tempPath);
         }
     }
-
-    #endregion
 }

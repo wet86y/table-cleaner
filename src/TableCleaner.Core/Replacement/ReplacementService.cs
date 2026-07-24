@@ -9,16 +9,16 @@ public static class ReplacementService
     /// <param name="source">源数据</param>
     /// <param name="rules">替换规则列表</param>
     /// <param name="scopeColumns">如果非 null，仅替换这些列（多列）</param>
-    public static TableData Apply(TableData source, List<ReplacementRule> rules, List<string>? scopeColumns = null)
+    public static TableData Apply(
+        TableData source,
+        List<ReplacementRule> rules,
+        IReadOnlyList<ColumnReference>? scopeColumns = null)
     {
         TableDataValidator.EnsureValid(source, "Replacement input");
         var result = CleaningService.Clone(source);
 
         var colIndices = scopeColumns is { Count: > 0 }
-            ? scopeColumns
-                .Select(c => result.GetColIndex(c))
-                .Where(i => i >= 0)
-                .ToList()
+            ? result.ResolveColumnIndexes(scopeColumns)
             : Enumerable.Range(0, result.ColumnCount).ToList();
 
         if (colIndices.Count == 0) return result;
@@ -27,8 +27,8 @@ public static class ReplacementService
         {
             if (!rule.Enabled || string.IsNullOrEmpty(rule.Before)) continue;
 
-            var effectiveCols = !string.IsNullOrEmpty(rule.Scope)
-                ? new List<int> { result.GetColIndex(rule.Scope) }.Where(i => i >= 0).ToList()
+            var effectiveCols = rule.Scope is not null
+                ? new List<int> { result.ResolveColumnIndex(rule.Scope) }.Where(i => i >= 0).ToList()
                 : colIndices;
 
             foreach (int ci in effectiveCols)
@@ -56,10 +56,7 @@ public static class ReplacementService
 
         // 1. 从 group 读取作用列
         var colIndices = group.ScopeColumns is { Count: > 0 }
-            ? group.ScopeColumns
-                .Select(c => result.GetColIndex(c))
-                .Where(i => i >= 0)
-                .ToList()
+            ? result.ResolveColumnIndexes(group.ScopeColumns)
             : Enumerable.Range(0, result.ColumnCount).ToList();
 
         if (colIndices.Count == 0) return result;
@@ -113,17 +110,6 @@ public static class ReplacementService
     }
 
     /// <summary>拓展替换：写入模式（覆盖 / 插值）</summary>
-    private static string MakeUniqueHeader(TableData data, string name)
-    {
-        if (!data.Headers.Contains(name, StringComparer.OrdinalIgnoreCase)) return name;
-        for (int suffix = 2; ; suffix++)
-        {
-            var candidate = $"{name}_{suffix}";
-            if (!data.Headers.Contains(candidate, StringComparer.OrdinalIgnoreCase))
-                return candidate;
-        }
-    }
-
     private static void ApplyExtendedRule(TableData data, List<int> colIndices, bool exactMatch,
         ReplacementGroup group, ReplacementRule rule)
     {
@@ -191,10 +177,8 @@ public static class ReplacementService
                         var colName = group.ExtraColumnNames is { Count: > 0 } && ei < group.ExtraColumnNames.Count
                             ? group.ExtraColumnNames[ei]
                             : $"扩展{ei + 1}";
-                        // 避免列名冲突：已有同名列时追加编号
-                        colName = MakeUniqueHeader(data, colName);
                         insertAt += ei;
-                        data.Headers.Insert(insertAt, colName);
+                        data.Columns.Insert(insertAt, TableColumn.Create(colName));
                         for (int ri = 0; ri < data.RowCount; ri++)
                         {
                             if (insertAt <= data.Rows[ri].Count)

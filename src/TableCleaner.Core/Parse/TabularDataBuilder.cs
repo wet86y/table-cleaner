@@ -22,18 +22,19 @@ public static class TabularDataBuilder
 
         if (firstRecordIsHeader)
         {
-            result.Headers = HeaderNormalizationService.Normalize(
+            var headers = HeaderNormalizationService.Normalize(
                 Enumerable.Range(0, maxWidth)
                     .Select(index => index < records[0].Count
                         ? records[0][index]
                         : $"{generatedHeaderPrefix}{index + 1}"));
+            result.Columns = TableData.CreateColumns(headers);
             firstDataIndex = 1;
         }
         else
         {
-            result.Headers = Enumerable.Range(1, maxWidth)
-                .Select(index => $"{generatedHeaderPrefix}{index}")
-                .ToList();
+            result.Columns = TableData.CreateColumns(
+                Enumerable.Range(1, maxWidth)
+                    .Select(index => $"{generatedHeaderPrefix}{index}"));
         }
 
         for (var recordIndex = firstDataIndex; recordIndex < records.Count; recordIndex++)

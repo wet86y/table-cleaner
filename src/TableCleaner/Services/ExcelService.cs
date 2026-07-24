@@ -60,7 +60,7 @@ public static class ExcelService
 
                 var td = new TableData
                 {
-                    Headers = HeaderNormalizationService.Normalize(rawHeaders)
+                    Columns = TableData.CreateColumns(HeaderNormalizationService.Normalize(rawHeaders))
                 };
 
                 for (int r = firstRow + 1; r <= lastRow; r++)
@@ -116,20 +116,25 @@ public static class ExcelService
             {
                 var ds = reader.AsDataSet(new ExcelDataSetConfiguration
                 {
-                    ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
+                    // 保留第一行原始单元格，避免 DataTable 自动重命名重复表头。
+                    ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = false }
                 });
 
                 for (int i = 0; i < ds.Tables.Count; i++)
                 {
                     var dt = ds.Tables[i];
+                    if (dt.Rows.Count == 0)
+                        continue;
+
                     var td = new TableData();
 
                     var rawHeaders = new List<string?>();
                     for (int c = 0; c < dt.Columns.Count; c++)
-                        rawHeaders.Add(dt.Columns[c]?.ColumnName);
-                    td.Headers = HeaderNormalizationService.Normalize(rawHeaders, treatGeneratedColumnNamesAsEmpty: true);
+                        rawHeaders.Add(dt.Rows[0][c]?.ToString());
+                    td.Columns = TableData.CreateColumns(
+                        HeaderNormalizationService.Normalize(rawHeaders));
 
-                    foreach (DataRow r in dt.Rows)
+                    foreach (DataRow r in dt.Rows.Cast<DataRow>().Skip(1))
                     {
                         var row = new List<string>();
                         for (int c = 0; c < dt.Columns.Count; c++)
@@ -153,7 +158,7 @@ public static class ExcelService
             var ws = workbook.Worksheets.Add("Sheet1");
 
             for (int c = 0; c < normalized.ColumnCount; c++)
-                ws.Cell(1, c + 1).Value = normalized.Headers[c];
+                ws.Cell(1, c + 1).Value = normalized.Columns[c].Header;
 
             for (int r = 0; r < normalized.RowCount; r++)
                 for (int c = 0; c < normalized.ColumnCount; c++)

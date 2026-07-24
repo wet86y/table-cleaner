@@ -7,20 +7,17 @@ namespace TableCleaner.Services;
 /// <summary>合并同类行：按分组列去重，求和列数值累加，其他列去重后 + 连接</summary>
 public static class MergeService
 {
-    public static TableData Merge(TableData source, List<string> groupColumns, List<string> sumColumns)
+    public static TableData Merge(
+        TableData source,
+        IReadOnlyList<ColumnReference> groupColumns,
+        IReadOnlyList<ColumnReference> sumColumns)
     {
         TableDataValidator.EnsureValid(source, "Group merge input");
-        var groupIndices = groupColumns
-            .Select(g => source.GetColIndex(g))
-            .Where(i => i >= 0)
-            .Distinct()
+        var groupIndices = source.ResolveColumnIndexes(groupColumns)
             .OrderBy(i => i)
             .ToList();
 
-        var sumIndices = sumColumns
-            .Select(s => source.GetColIndex(s))
-            .Where(i => i >= 0)
-            .Distinct()
+        var sumIndices = source.ResolveColumnIndexes(sumColumns)
             .OrderBy(i => i)
             .ToList();
 
@@ -29,7 +26,7 @@ public static class MergeService
 
         var overlappingIndex = groupIndices.Intersect(sumIndices).FirstOrDefault(-1);
         if (overlappingIndex >= 0)
-            throw new InvalidDataException($"列“{source.Headers[overlappingIndex]}”不能同时作为分组列和求和列。");
+            throw new InvalidDataException($"列“{source.Columns[overlappingIndex].Header}”不能同时作为分组列和求和列。");
 
         var groups = new Dictionary<string, List<DataRow>>();
         // Assign row IDs for grouping
@@ -41,8 +38,10 @@ public static class MergeService
             groups[key].Add(new DataRow(source, ri));
         }
 
-        var result = new TableData();
-        result.Headers = new List<string>(source.Headers);
+        var result = new TableData
+        {
+            Columns = source.Columns.Select(column => column.Clone()).ToList()
+        };
 
         foreach (var kvp in groups)
         {
@@ -63,7 +62,7 @@ public static class MergeService
                     var raw = GetCell(r.Values, i).Trim();
                     if (string.IsNullOrEmpty(raw)) continue;
                     if (!TryParseNumber(raw, out var value))
-                        throw new InvalidDataException($"列“{source.Headers[i]}”包含无法求和的值“{raw}”。合并已取消，原数据未修改。");
+                        throw new InvalidDataException($"列“{source.Columns[i].Header}”包含无法求和的值“{raw}”。合并已取消，原数据未修改。");
                     sum += value;
                     any = true;
                 }

@@ -35,6 +35,8 @@ public class TemplateEditorForm : Form
 
     // ═══ Data ═══
     private readonly List<string>? _allColumns;
+    private readonly Dictionary<string, ColumnReference> _columnReferencesByDisplay =
+        new(StringComparer.OrdinalIgnoreCase);
     private bool _refreshing;
     private bool _loadingUi;
     private bool _uiReady;
@@ -70,10 +72,19 @@ public class TemplateEditorForm : Form
     /// <summary>最后应用的模板 ID</summary>
     public string? AppliedTemplateId { get; private set; }
 
-    public TemplateEditorForm(List<string>? allColumns = null)
+    public TemplateEditorForm(TableData? table = null)
     {
         Icon = AppVisuals.WindowIcon;
-        _allColumns = allColumns;
+        if (table is not null)
+        {
+            _allColumns = new List<string>();
+            for (var index = 0; index < table.ColumnCount; index++)
+            {
+                var display = table.GetColumnDisplayName(index);
+                _allColumns.Add(display);
+                _columnReferencesByDisplay[display] = table.GetColumnReference(index);
+            }
+        }
 
         Text = "模板库管理";
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -427,10 +438,14 @@ public class TemplateEditorForm : Form
 
                 // Fill values
                 _dgvMatrix.Rows[0].Cells[colIdx].Value = col.Header;
-                _dgvMatrix.Rows[1].Cells[colIdx].Value = string.IsNullOrWhiteSpace(col.BackupSource1) && !string.IsNullOrWhiteSpace(col.SourceHeader) && !string.Equals(col.SourceHeader, col.Header, StringComparison.OrdinalIgnoreCase)
-                    ? col.SourceHeader
-                    : col.BackupSource1;
-                _dgvMatrix.Rows[2].Cells[colIdx].Value = col.BackupSource2;
+                _dgvMatrix.Rows[1].Cells[colIdx].Value = col.BackupSources.Count > 0
+                    ? DisplayReference(col.BackupSources[0])
+                    : !string.Equals(col.SourceColumn.Header, col.Header, StringComparison.OrdinalIgnoreCase)
+                        ? DisplayReference(col.SourceColumn)
+                        : "";
+                _dgvMatrix.Rows[2].Cells[colIdx].Value = col.BackupSources.Count > 1
+                    ? DisplayReference(col.BackupSources[1])
+                    : "";
                 if (rowCount > 3)
                 {
                     _dgvMatrix.Rows[3].Cells[colIdx].Value = col.MatchValue;
@@ -489,10 +504,14 @@ public class TemplateEditorForm : Form
             var tc = new TemplateColumn
             {
                 Header = header,
-                SourceHeader = header,
-                BackupSource1 = _dgvMatrix.Rows[1].Cells[colIdx].Value?.ToString() ?? "",
-                BackupSource2 = _dgvMatrix.Rows[2].Cells[colIdx].Value?.ToString() ?? ""
+                SourceColumn = ResolveReference(header)
             };
+            var backup1 = _dgvMatrix.Rows[1].Cells[colIdx].Value?.ToString() ?? "";
+            var backup2 = _dgvMatrix.Rows[2].Cells[colIdx].Value?.ToString() ?? "";
+            if (!string.IsNullOrWhiteSpace(backup1))
+                tc.BackupSources.Add(ResolveReference(backup1));
+            if (!string.IsNullOrWhiteSpace(backup2))
+                tc.BackupSources.Add(ResolveReference(backup2));
 
             if (rowCount > 3)
             {
@@ -552,10 +571,14 @@ public class TemplateEditorForm : Form
                 int colIdx = _dgvMatrix.Columns.Add(dataCol);
 
                 _dgvMatrix.Rows[0].Cells[colIdx].Value = col.Header;
-                _dgvMatrix.Rows[1].Cells[colIdx].Value = string.IsNullOrWhiteSpace(col.BackupSource1) && !string.IsNullOrWhiteSpace(col.SourceHeader) && !string.Equals(col.SourceHeader, col.Header, StringComparison.OrdinalIgnoreCase)
-                    ? col.SourceHeader
-                    : col.BackupSource1;
-                _dgvMatrix.Rows[2].Cells[colIdx].Value = col.BackupSource2;
+                _dgvMatrix.Rows[1].Cells[colIdx].Value = col.BackupSources.Count > 0
+                    ? DisplayReference(col.BackupSources[0])
+                    : !string.Equals(col.SourceColumn.Header, col.Header, StringComparison.OrdinalIgnoreCase)
+                        ? DisplayReference(col.SourceColumn)
+                        : "";
+                _dgvMatrix.Rows[2].Cells[colIdx].Value = col.BackupSources.Count > 1
+                    ? DisplayReference(col.BackupSources[1])
+                    : "";
                 if (rowCount > 3)
                 {
                     _dgvMatrix.Rows[3].Cells[colIdx].Value = col.MatchValue;
@@ -842,11 +865,13 @@ public class TemplateEditorForm : Form
                 var tc = new TemplateColumn
                 {
                     Header = header,
-                    SourceHeader = header,
-                    BackupSource1 = backup1,
-                    BackupSource2 = backup2,
+                    SourceColumn = ResolveReference(header),
                     MatchValue = rowCount > 3 ? matchVal : ""
                 };
+                if (!string.IsNullOrWhiteSpace(backup1))
+                    tc.BackupSources.Add(ResolveReference(backup1));
+                if (!string.IsNullOrWhiteSpace(backup2))
+                    tc.BackupSources.Add(ResolveReference(backup2));
                 t.TargetHeaders.Add(tc);
                 addedCols++;
             }
@@ -933,5 +958,26 @@ public class TemplateEditorForm : Form
 
         AppliedTemplateId = t.Id;
         TemplateApplied?.Invoke(this, EventArgs.Empty);
+    }
+
+    private ColumnReference ResolveReference(string displayOrHeader)
+    {
+        var value = displayOrHeader.Trim();
+        if (_columnReferencesByDisplay.TryGetValue(value, out var reference))
+        {
+            return new ColumnReference
+            {
+                Header = reference.Header,
+                Occurrence = reference.Occurrence
+            };
+        }
+
+        return new ColumnReference { Header = value, Occurrence = 1 };
+    }
+
+    private string DisplayReference(ColumnReference reference)
+    {
+        var match = _columnReferencesByDisplay.FirstOrDefault(pair => pair.Value.Equals(reference));
+        return string.IsNullOrEmpty(match.Key) ? reference.ToString() : match.Key;
     }
 }
